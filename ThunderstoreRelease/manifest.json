@@ -1,0 +1,10 @@
+{
+  "name": "BaseAssistant",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/O-Men/BaseAssistant",
+  "description": "An autonomous AI assistant for your Valheim base. Automatically repairs structures, fuels kilns, collects items from the ground, and organizes your chests with strict sorting rules.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2300",
+    "ValheimModding-Jotunn-2.29.1"
+  ]
+}

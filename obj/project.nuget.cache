@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "dgSpecHash": "RKj3R12kIno=",
+  "success": true,
+  "projectFilePath": "e:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\o_men\\.nuget\\packages\\bepinex.analyzers\\1.0.8\\bepinex.analyzers.1.0.8.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\bepinex.baselib\\5.4.20\\bepinex.baselib.5.4.20.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\bepinex.core\\5.4.21\\bepinex.core.5.4.21.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\bepinex.plugininfoprops\\1.1.0\\bepinex.plugininfoprops.1.1.0.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\harmonyx\\2.9.0\\harmonyx.2.9.0.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\jotunnlib\\2.16.1\\jotunnlib.2.16.1.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net462\\1.0.3\\microsoft.netframework.referenceassemblies.net462.1.0.3.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\mono.cecil\\0.11.4\\mono.cecil.0.11.4.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\monomod.runtimedetour\\22.1.29.1\\monomod.runtimedetour.22.1.29.1.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\monomod.utils\\22.1.29.1\\monomod.utils.22.1.29.1.nupkg.sha512",
+    "C:\\Users\\o_men\\.nuget\\packages\\unityengine.modules\\2020.3.33\\unityengine.modules.2020.3.33.nupkg.sha512"
+  ],
+  "logs": []
+}

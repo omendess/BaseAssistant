@@ -21,8 +21,10 @@ A IA toma decisões a cada varredura (scan). Ela avalia o ambiente e escolhe o q
 *   **[PRIORIDADE 3] MANUTENÇÃO E REPAROS:**
     *   Ele usa "visão de raio-x" telepática. Ao se aproximar de uma parede quebrada, ele ativa um "Reparo em Área" invisível que conserta todas as peças ao seu redor de uma vez só.
 
-*   **[PRIORIDADE 4] CARVOARIA E FUNDIÇÃO:**
-    *   Ele verifica os fornos. Se o forno tem espaço e o limite global de carvão/metal não foi atingido, ele vai no baú de madeira, pega a madeira e abastece o forno.
+*   **[PRIORIDADE 4] CARVOARIA E FUNDIÇÃO (Universal):**
+    *   Ele verifica todos os fornos e fundições. A IA usa um sistema dinâmico que lê o que a máquina aceita de minério e combustível (Carvão/Madeira).
+    *   **Limites de Produção:** O assistente pausa a produção de um item se atingir o limite global (ex: 200 carvões, 100 metais) para não superproduzir.
+    *   **Reserva de Segurança:** A IA nunca zera o estoque dos baús de matéria-prima (Madeira, Carvão e Minérios). Ela obrigatoriamente preserva uma quantidade de reserva configurada (ex: sempre deixar 10 madeiras no baú) antes de alimentar os fornos.
 
 *   **[PRIORIDADE 5] LIXEIRO (Itens no chão):**
     *   Ele recolhe qualquer item empilhável largado no chão, *apenas* se ele tiver certeza absoluta de que existe um baú com espaço para guardar aquele item. (Sistema de Clarividência).

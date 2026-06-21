@@ -15,7 +15,7 @@ namespace BaseAssistant
     {
         public const string PluginGUID = "com.omen.baseassistant";
         public const string PluginName = "Base Assistant";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "0.1.1";
 
         public static ConfigEntry<float> WorkRadius;
         public static ConfigEntry<float> RepairDistance;
@@ -28,6 +28,9 @@ namespace BaseAssistant
         public static ConfigEntry<float> AoERepairRadius;
         public static ConfigEntry<int> MaxCoalAmount;
         public static ConfigEntry<int> MaxSmeltedMetal;
+        public static ConfigEntry<int> LeaveWoodAmount;
+        public static ConfigEntry<int> LeaveCoalAmount;
+        public static ConfigEntry<int> LeaveOreAmount;
 
         public static ConfigEntry<bool> EnableRepairing;
         public static ConfigEntry<bool> EnableSmelting;
@@ -75,6 +78,9 @@ namespace BaseAssistant
 
             MaxCoalAmount = Config.Bind("4. Producao", "MaximoCarvao", 200, "Quantidade máxima de carvão nos baús antes do Assistente parar de abastecer a Fornalha de Carvão.");
             MaxSmeltedMetal = Config.Bind("4. Producao", "MaximoMetal", 100, "Quantidade máxima de um metal nos baús antes do Assistente parar de colocar minério na Fundição.");
+            LeaveWoodAmount = Config.Bind("4. Producao", "ReservaMadeira", 10, "Quantidade mínima de segurança de madeira que ele nunca vai retirar do baú.");
+            LeaveCoalAmount = Config.Bind("4. Producao", "ReservaCarvao", 10, "Quantidade mínima de segurança de carvão que ele nunca vai retirar do baú para fornalhas.");
+            LeaveOreAmount = Config.Bind("4. Producao", "ReservaMinerio", 0, "Quantidade mínima de segurança de minério cru que ele deixará intocado no baú.");
 
             Logger.LogInfo($"O mod {PluginName} (v{PluginVersion}) foi carregado com sucesso!");
             // Registro de Peças DEVE ser feito após os prefabs vanilla carregarem

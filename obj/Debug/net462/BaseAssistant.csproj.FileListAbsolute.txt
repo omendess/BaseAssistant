@@ -22,3 +22,4 @@ E:\ValheimMods\BaseAssistant\bin\Debug\net462\PlayFabParty.dll
 E:\ValheimMods\BaseAssistant\obj\Debug\net462\BaseAssi.90E49CEC.Up2Date
 E:\ValheimMods\BaseAssistant\obj\Debug\net462\BaseAssistant.dll
 E:\ValheimMods\BaseAssistant\obj\Debug\net462\BaseAssistant.pdb
+E:\ValheimMods\BaseAssistant\obj\Debug\net462\BaseAssistant.sourcelink.json

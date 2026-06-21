@@ -10,22 +10,24 @@ O Assistente já é capaz de navegar pela base, reparar estruturas quebradas em 
 2. **Sistema de Configuração em Tempo Real (Live Reloading):** Integração com `BepInEx.Configuration`. As distâncias e lógicas podem ser ajustadas no Thunderstore (via `com.omen.baseassistant.cfg`) e são atualizadas no jogo a cada 5 segundos sem necessidade de reiniciar.
 3. **Reparo em Área (AoE):** Quando o NPC detecta uma peça danificada, ele anda até uma distância segura e invoca um conserto que repara todas as estruturas num raio configurável (Padrão: 10m).
 4. **Logística de Cadeia (Chain Pickup):** O assistente vasculha o chão em busca de itens acumuláveis. Se pegar um item, ele procura itens similares próximos para encher as mãos antes de ir guardar, economizando viagens.
-5. **Abastecimento Inteligente:** Coleta madeira de baús próximos e abastece `Smelters` (como a Charcoal Kiln).
-6. **Sistema de Desatolamento (Geodata Bypass v2):** O cálculo de distâncias agora é feito mapeando a **Borda (Bounding Box)** dos objetos, ao invés do centro. Se o NPC se prender no cenário, há um timeout (5s) que teleporta o NPC com segurança para fora das bordas do objeto problemático.
+5. **Abastecimento Inteligente (Fundição Universal):** O assistente verifica todas as fornalhas e fundições da base (incluindo mods). Ele lê ativamente o que a máquina aceita e abastece com carvão/madeira e minérios disponíveis.
+6. **Limites de Produção e Reserva Segura:** O assistente pausa a produção automaticamente se um certo limite de minério ou carvão já foi produzido. Além disso, ele **nunca** esvazia os baús de matérias-primas, preservando uma quantidade de reserva (`LeaveWoodAmount`, `LeaveCoalAmount`, `LeaveOreAmount`).
+7. **Sistema de Desatolamento (Geodata Bypass v2):** O cálculo de distâncias agora é feito mapeando a **Borda (Bounding Box)** dos objetos.
+8. **Nomes nos Baús:** O jogador pode renomear os baús e o assistente usará o nome (baseado na tradução local) para armazenar metais e ligas sem causar problemas de diferença entre maiúsculas/minúsculas.
 
 ## ⚙️ Variáveis de Configuração (BepInEx)
 O arquivo `com.omen.baseassistant.cfg` permite customizar:
 * `RaioDeTrabalho`: Tamanho da área de cobertura (Padrão: 30m).
 * `VidaParaReparo`: Limiar para consertar (Padrão: 0.8 / 80%).
 * `RaioReparoEmArea`: Tamanho do domo de reparo AoE (Padrão: 10m).
-* `DistanciaParaConserto`: Range da 'telepatia' de reparo (Padrão: 6.0m).
 * `DistanciaFornalha`: Distância para jogar itens na fornalha (Padrão: 4.0m).
 * `DistanciaBau` / `DistanciaItemChao`: Distâncias mais curtas de interação física (Padrão: 2.5m e 2.0m).
+* `LeaveWoodAmount`, `LeaveCoalAmount`, `LeaveOreAmount`: Quantidade mínima de itens a serem preservados no baú.
+* `MaxCoalAmount`, `MaxSmeltedMetal`: Limites globais máximos de produção de carvão e metais.
 
-## 📝 Backlog / Próximos Passos
-* **Refinar Lógica de Distância e NavMesh:** O usuário relatou que a lógica de "chegada" híbrida ainda precisa de ajustes finos (NPC esbarra em problemas de pathfinding do Valheim).
-* **IA de Repouso:** Implementar rotina noturna, onde o NPC volta para a cama para dormir caso não haja trabalho.
-* **Filtros Personalizados:** Opção para definir quais baús recebem quais itens (Whitelist/Blacklist).
+## 📝 Próximos Passos
+* **Novas Integrações Industriais:** Moinhos, rodas de fiar e fornos de pão.
+* **Organização Total de Estoque:** Refinar ainda mais as pontuações do baú baseado em tipos específicos (Ex: guardar resina com madeira).
 
 ---
 *Documentação gerada pelo Sistema de Encerramento (Antigravity).*

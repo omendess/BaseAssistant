@@ -1,51 +1,33 @@
-# Base Assistant
+# Valheim Base Assistant
 
-**Base Assistant** is a powerful, autonomous AI NPC that helps you manage your Valheim base. Once set up, the assistant will automatically repair structures, refuel your kilns/smelters, collect dropped items, and strictly organize your chests based on dynamic affinity scoring and customizable naming.
+Um mod para Valheim que adiciona um NPC "Dverger" autônomo focado em logística e manutenção da base.
 
-## Features
+## 🛠️ Estado Atual (Versão Finalizada da Sessão)
+O Assistente já é capaz de navegar pela base, reparar estruturas quebradas em área, coletar itens caídos e armazená-los em baús, além de reabastecer fornalhas ativamente.
 
-- **Autonomous Base Maintenance:**
-  - **Repairs:** Uses "telepathic" AoE repairing to fix structures around them.
-  - **Smelting & Fueling:** Automatically feeds kilns with wood (up to a configurable limit).
-  - **Loot Collection:** Picks up dropped items within the base radius.
+### Funcionalidades Implementadas:
+1. **Radar e Área de Atuação:** O assistente orbita uma "Cama do Assistente" num raio padrão de 30 metros. A cama possui um toggle (Interagir) que cria uma cúpula visual para exibir a área de cobertura.
+2. **Sistema de Configuração em Tempo Real (Live Reloading):** Integração com `BepInEx.Configuration`. As distâncias e lógicas podem ser ajustadas no Thunderstore (via `com.omen.baseassistant.cfg`) e são atualizadas no jogo a cada 5 segundos sem necessidade de reiniciar.
+3. **Reparo em Área (AoE):** Quando o NPC detecta uma peça danificada, ele anda até uma distância segura e invoca um conserto que repara todas as estruturas num raio configurável (Padrão: 10m).
+4. **Logística de Cadeia (Chain Pickup):** O assistente vasculha o chão em busca de itens acumuláveis. Se pegar um item, ele procura itens similares próximos para encher as mãos antes de ir guardar, economizando viagens.
+5. **Abastecimento Inteligente (Fundição Universal):** O assistente verifica todas as fornalhas e fundições da base (incluindo mods). Ele lê ativamente o que a máquina aceita e abastece com carvão/madeira e minérios disponíveis.
+6. **Limites de Produção e Reserva Segura:** O assistente pausa a produção automaticamente se um certo limite de minério ou carvão já foi produzido. Além disso, ele **nunca** esvazia os baús de matérias-primas, preservando uma quantidade de reserva (`LeaveWoodAmount`, `LeaveCoalAmount`, `LeaveOreAmount`).
+7. **Sistema de Desatolamento (Geodata Bypass v2):** O cálculo de distâncias agora é feito mapeando a **Borda (Bounding Box)** dos objetos.
+8. **Nomes nos Baús:** O jogador pode renomear os baús e o assistente usará o nome (baseado na tradução local) para armazenar metais e ligas sem causar problemas de diferença entre maiúsculas/minúsculas.
 
-- **Intelligent Inventory Sorting:**
-  - **Supreme Affinity Sorting:** Rename a chest in-game (using `Shift + E`) to the exact item name (e.g., "Fine wood"). The AI will prioritize this chest above all others for that specific item.
-  - **Category Sorting:** Name a chest "Weapons", "Armor", "Wood", "Metal", or "Food" to create dedicated storage.
-  - **Contamination Protection:** The AI will *never* mix different primary categories (e.g., it will never put food in a chest full of stone).
-  - **Active Decontamination (Anti-Loop):** When idle, the AI will audit your generic chests, extract misplaced items, and move them to their Supreme Affinity chests.
+## ⚙️ Variáveis de Configuração (BepInEx)
+O arquivo `com.omen.baseassistant.cfg` permite customizar:
+* `RaioDeTrabalho`: Tamanho da área de cobertura (Padrão: 30m).
+* `VidaParaReparo`: Limiar para consertar (Padrão: 0.8 / 80%).
+* `RaioReparoEmArea`: Tamanho do domo de reparo AoE (Padrão: 10m).
+* `DistanciaFornalha`: Distância para jogar itens na fornalha (Padrão: 4.0m).
+* `DistanciaBau` / `DistanciaItemChao`: Distâncias mais curtas de interação física (Padrão: 2.5m e 2.0m).
+* `LeaveWoodAmount`, `LeaveCoalAmount`, `LeaveOreAmount`: Quantidade mínima de itens a serem preservados no baú.
+* `MaxCoalAmount`, `MaxSmeltedMetal`: Limites globais máximos de produção de carvão e metais.
 
-## How to Use
-
-1. **Summon the Assistant:** Build an **Assistant Totem** or **Assistant Bed** in your base (Available in the Hammer menu). The NPC will spawn near it.
-2. **Rename Chests (Optional but Recommended):** Look at any chest and press `Shift + E` to rename it. 
-   - Write the exact translated name of the item (e.g., `Wood` or `Madeira`) to lock that chest to that item.
-   - Or write a category (e.g., `Weapons` or `Armas`).
-3. **Blacklist Chests:** Name a chest `Ignore` or `Privado` (configurable) to make the AI completely ignore it.
-
-## Warnings & Configuration ⚠️
-
-- **Visual Anomalies:** The assistant interacts with chests up to a configurable distance (default 3 meters). If you increase the `ChestDistance` or `WorkRadius` too much in the config, the NPC might interact with objects from across the room, which can look strange or "macabre" (ghostly floating items).
-- **Misspelled Labels:** If you rename a chest but misspell the word (e.g., "Weapns"), the AI will treat the chest as **Restricted** and will never put anything inside it to protect your organization.
-- **Server Sync:** This mod features Server Sync. If installed on a dedicated server, the server's configurations (like Custom Tags and ranges) will override the clients' configurations.
+## 📝 Próximos Passos
+* **Novas Integrações Industriais:** Moinhos, rodas de fiar e fornos de pão.
+* **Organização Total de Estoque:** Refinar ainda mais as pontuações do baú baseado em tipos específicos (Ex: guardar resina com madeira).
 
 ---
-
-### Pt-BR: Avisos e Configuração ⚠️
-
-- **Anomalias Visuais:** O assistente pode interagir com baús a uma distância configurável (padrão 3 metros). **ATENÇÃO:** Alterar essas distâncias para valores muito altos no arquivo de configuração (`Edit Config`) pode deixar o visual do jogo estranho e, às vezes, macabro (com itens flutuando de longe). Modifique com cuidado!
-- **Nomes Errados:** Se você renomear um baú com erro de digitação (ex: "Armass"), a IA considerará o baú **Restrito/Trancado** e não guardará nada nele, para evitar bagunçar seus itens.
-
-## Installation
-
-### With Thunderstore Mod Manager (Recommended)
-Simply click **Install with Mod Manager**. All dependencies (BepInEx and Jotunn) will be installed automatically.
-
-### Manual Installation
-1. Install [BepInExPack Valheim](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/) and [Jotunn](https://valheim.thunderstore.io/package/ValheimModding/Jotunn/).
-2. Download this mod and extract the `BaseAssistant.dll` file.
-3. Place `BaseAssistant.dll` inside your `Valheim/BepInEx/plugins/` folder.
-
-## Author
-
-Created by O-Men.
+*Documentação gerada pelo Sistema de Encerramento (Antigravity).*

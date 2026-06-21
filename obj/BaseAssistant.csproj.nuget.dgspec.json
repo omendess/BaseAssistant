@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "e:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj": {}
+    "E:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj": {}
   },
   "projects": {
-    "e:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj": {
+    "E:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "e:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj",
+        "projectUniqueName": "E:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj",
         "projectName": "BaseAssistant",
-        "projectPath": "e:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj",
+        "projectPath": "E:\\ValheimMods\\BaseAssistant\\BaseAssistant.csproj",
         "packagesPath": "C:\\Users\\o_men\\.nuget\\packages\\",
-        "outputPath": "e:\\ValheimMods\\BaseAssistant\\obj\\",
+        "outputPath": "E:\\ValheimMods\\BaseAssistant\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "e:\\ValheimMods\\BaseAssistant\\NuGet.Config",
+          "E:\\ValheimMods\\BaseAssistant\\NuGet.Config",
           "C:\\Users\\o_men\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [

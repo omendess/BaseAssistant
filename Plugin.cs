@@ -15,7 +15,7 @@ namespace BaseAssistant
     {
         public const string PluginGUID = "com.omen.baseassistant";
         public const string PluginName = "Base Assistant";
-        public const string PluginVersion = "0.1.1";
+        public const string PluginVersion = "0.1.0";
 
         public static ConfigEntry<float> WorkRadius;
         public static ConfigEntry<float> RepairDistance;
@@ -24,6 +24,8 @@ namespace BaseAssistant
         public static ConfigEntry<float> GroundItemDistance;
         public static ConfigEntry<float> StuckTimeout;
         public static ConfigEntry<float> TaskTimeout;
+        public static ConfigEntry<float> NpcWalkSpeed;
+        public static ConfigEntry<float> NpcRunSpeed;
         public static ConfigEntry<float> RepairHealthThreshold;
         public static ConfigEntry<float> AoERepairRadius;
         public static ConfigEntry<int> MaxCoalAmount;
@@ -58,12 +60,14 @@ namespace BaseAssistant
             WorkRadius = Config.Bind("1. Geral", "RaioDeTrabalho", 30f, "Raio de ação do assistente a partir do Totem.");
             RepairHealthThreshold = Config.Bind("1. Geral", "VidaParaReparo", 0.8f, "Porcentagem de vida (0.0 a 1.0) para que o assistente decida consertar uma estrutura.");
             AoERepairRadius = Config.Bind("1. Geral", "RaioReparoEmArea", 10.0f, "Raio (em metros) em volta da peça que ele vai consertar tudo de uma vez com o poder da telepatia.");
+            NpcWalkSpeed = Config.Bind("1. Geral", "VelocidadeAndar", 3.0f, "Velocidade do NPC quando está andando.");
+            NpcRunSpeed = Config.Bind("1. Geral", "VelocidadeCorrer", 6.0f, "Velocidade do NPC quando está correndo para concluir uma tarefa.");
             
             TagWeapons = Config.Bind("5. Regras de Baus", "TagArmas", "armas, weapons, arsenal", "Palavras-chave (separadas por vírgula) que a IA reconhecerá no nome do baú para guardar Armas e Ferramentas.");
             TagArmor = Config.Bind("5. Regras de Baus", "TagArmadura", "armaduras, armor, equipamentos", "Palavras-chave que a IA reconhecerá para guardar Armaduras e Escudos.");
             TagFood = Config.Bind("5. Regras de Baus", "TagComida", "comida, food, rango, consumiveis", "Palavras-chave que a IA reconhecerá para guardar Comidas e Poções.");
-            TagWood = Config.Bind("5. Regras de Baus", "TagMadeira", "madeira, wood, lenha", "Palavras-chave que a IA reconhecerá para guardar Madeiras em geral.");
-            TagMetal = Config.Bind("5. Regras de Baus", "TagMetal", "metal, minério, ore, ferro", "Palavras-chave que a IA reconhecerá para guardar Minérios e Metais fundidos.");
+            TagWood = Config.Bind("5. Regras de Baus", "TagMadeira", "wood, lenha", "Palavras-chave que a IA reconhecerá para guardar Madeiras em geral.");
+            TagMetal = Config.Bind("5. Regras de Baus", "TagMetal", "metal, minério, ore", "Palavras-chave que a IA reconhecerá para guardar Minérios e Metais fundidos.");
             TagIgnore = Config.Bind("5. Regras de Baus", "TagIgnorar", "ignorar, privado, nao tocar, ignore", "Palavras-chave que a IA reconhecerá para IGNORAR completamente o baú.");
             
             string distWarning = "\n[AVISO] Alterar as distâncias de interação pode deixar o visual do jogo estranho e algumas vezes macabro (telecinese e itens flutuando).\n[Warning] Changing interaction distances may cause weird or macabre visual behaviors (telekinesis and floating items).";

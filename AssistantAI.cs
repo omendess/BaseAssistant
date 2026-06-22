@@ -20,10 +20,13 @@ namespace BaseAssistant
         // --- Memória do Assistente ---
         private GameObject _targetObj;
         private string _currentTask = "Idle"; // Idle, PickupGround, MoveToChestToStore, MoveToChestToFetch, FeedKiln
-        private string _holdingItem = ""; // "Wood" ou "Coal"
-        private int _holdingAmount = 0;
+        private ItemDrop.ItemData _heldItemData = null; // Memória completa do item (Mantém nível, encanto, durabilidade)
         private bool _weaponsCleared = false;
         private Dictionary<GameObject, float> _blacklistedObjects = new Dictionary<GameObject, float>();
+        
+        // --- Inteligência Coletiva (Reserva de Alvos) ---
+        public static HashSet<ZDOID> ReservedItems = new HashSet<ZDOID>();
+        private ZDOID _reservedZDOID = ZDOID.None;
         
         // --- Detecção de Travamento ---
         private Vector3 _lastPos;
@@ -91,6 +94,12 @@ namespace BaseAssistant
         {
             if (_nview == null || !_nview.IsOwner()) return;
 
+            if (_character != null)
+            {
+                _character.m_walkSpeed = Plugin.NpcWalkSpeed.Value;
+                _character.m_runSpeed = Plugin.NpcRunSpeed.Value;
+            }
+
             if (!_weaponsCleared && _humanoid != null && _humanoid.GetInventory() != null)
             {
                 // Deixamos para limpar aqui no Update para garantir que os itens já foram carregados do save
@@ -125,17 +134,11 @@ namespace BaseAssistant
             // Atualiza o nome acima da cabeça dele para mostrar o inventário
             if (_character != null)
             {
-                if (_holdingAmount > 0)
+                if (_heldItemData != null && _heldItemData.m_stack > 0)
                 {
                     // Traduz visualmente usando o sistema nativo do Valheim
-                    string displayItem = _holdingItem;
-                    GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-                    if (prefab != null)
-                    {
-                        string locName = prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_name;
-                        displayItem = Localization.instance.Localize(locName);
-                    }
-                    _character.m_name = $"Assistente ({_holdingAmount}x {displayItem})";
+                    string displayItem = Localization.instance.Localize(_heldItemData.m_shared.m_name);
+                    _character.m_name = $"Assistente ({_heldItemData.m_stack}x {displayItem})";
                 }
                 else
                 {
@@ -194,6 +197,39 @@ namespace BaseAssistant
             return null;
         }
 
+        private void ReleaseReservation()
+        {
+            if (_reservedZDOID != ZDOID.None)
+            {
+                ReservedItems.Remove(_reservedZDOID);
+                _reservedZDOID = ZDOID.None;
+            }
+        }
+
+        private void ClearReservationWithoutRelease()
+        {
+            // Clears the NPC's reference to the reservation without removing it from the global list.
+            // This guarantees that recently destroyed items remain "reserved" and invisible to other NPCs
+            // during the few frames Valheim takes to actually delete them from the world.
+            _reservedZDOID = ZDOID.None;
+        }
+
+        private void SetTask(string task, GameObject target)
+        {
+            if (task != _currentTask)
+            {
+                ReleaseReservation(); // Limpa reserva anterior
+            }
+            _currentTask = task;
+            _targetObj = target;
+            _taskTimeout = 15f;
+            _stuckTimer = 0f;
+            if (_monsterAI != null)
+            {
+                _monsterAI.SetFollowTarget(target);
+            }
+        }
+
         private void ProcessAI()
         {
             bool isNight = EnvMan.instance != null && EnvMan.IsNight();
@@ -227,7 +263,7 @@ namespace BaseAssistant
                 Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", phrase, false);
                 _wasNight = false;
                 _isSleeping = false;
-                _currentTask = "Idle";
+                SetTask("Idle", null);
                 
                 // Teleporte de Desatolamento
                 GameObject bed = FindBed();
@@ -261,9 +297,8 @@ namespace BaseAssistant
             {
                 if (_currentTask != "Panic")
                 {
-                    _currentTask = "Panic";
+                    SetTask("Panic", null);
                     Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", "Socorro! Monstros na base!", false);
-                    _monsterAI.SetFollowTarget(null);
                 }
                 
                 GameObject bed = FindBed();
@@ -281,7 +316,7 @@ namespace BaseAssistant
             }
             else if (_currentTask == "Panic")
             {
-                _currentTask = "Idle";
+                SetTask("Idle", null);
                 Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", "Ufa, parece seguro agora...", false);
             }
 
@@ -310,10 +345,9 @@ namespace BaseAssistant
                     if (_stuckTimer >= Plugin.StuckTimeout.Value && _targetObj != null)
                     {
                         Jotunn.Logger.LogInfo($"[AssistantAI] Preso indo para {_targetObj.name}. Abandonando tarefa!");
-                        _blacklistedObjects[_targetObj] = Time.time + 60f; // Ignora por 60s
-                        _currentTask = "Idle";
-                        _monsterAI.SetFollowTarget(null);
-                        _stuckTimer = 0f;
+                        float penalty = (_currentTask == "PickupGround") ? 5f : 15f;
+                        _blacklistedObjects[_targetObj] = Time.time + penalty; 
+                        SetTask("Idle", null);
                         return;
                     }
                 }
@@ -326,10 +360,14 @@ namespace BaseAssistant
                 _taskTimeout -= _scanInterval;
                 if (_targetObj == null || _taskTimeout <= 0f)
                 {
+                    // Se o alvo for nulo (destruído mas com task timeout), nós NÃO devemos liberar a reserva caso seja do chão
+                    // pois um ZNetView destruído com Delay deixaria a reserva aberta para duplicar.
+                    // Porém o SetTask("Idle", null) chama o ReleaseReservation! 
+                    // Solução: se o alvo é nulo, a gente chama ClearReservationWithoutRelease() antes!
+                    if (_targetObj == null && _currentTask == "PickupGround") ClearReservationWithoutRelease();
+                    
                     Jotunn.Logger.LogWarning($"[AssistantAI] Tarefa {_currentTask} expirou ou alvo foi destruído. Voltando para Idle.");
-                    _currentTask = "Idle";
-                    _monsterAI.SetFollowTarget(null);
-                    _stuckTimer = 0f;
+                    SetTask("Idle", null);
                     return;
                 }
             }
@@ -397,7 +435,8 @@ namespace BaseAssistant
                             
                             if (fuelChest != null)
                             {
-                                _holdingItem = fuelName;
+                                _heldItemData = smelter.m_fuelItem.m_itemData.Clone();
+                                _heldItemData.m_stack = 0;
                                 _targetSmelter = smelter.gameObject;
                                 SetTask("MoveToChestToFetch", fuelChest.gameObject);
                                 return true;
@@ -426,7 +465,8 @@ namespace BaseAssistant
                                 Container oreChest = FindChestForSmelterItem(hits, rawItemName, leaveAmount);
                                 if (oreChest != null)
                                 {
-                                    _holdingItem = rawItemName;
+                                    _heldItemData = conversion.m_from.m_itemData.Clone();
+                                    _heldItemData.m_stack = 0;
                                     _targetSmelter = smelter.gameObject;
                                     SetTask("MoveToChestToFetch", oreChest.gameObject);
                                     return true;
@@ -548,44 +588,44 @@ namespace BaseAssistant
             Collider[] hits = Physics.OverlapSphere(GetBaseCenter(), Plugin.WorkRadius.Value); 
             
             // PRIORIDADE 1: Se tem algo nas mãos, tenta pegar mais do mesmo (chaining) ou vai guardar
-            if (_holdingAmount > 0)
+            if (_heldItemData != null && _heldItemData.m_stack > 0)
             {
-                GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
+                GameObject prefab = _heldItemData.m_dropPrefab;
                 int maxStack = 50;
                 if (prefab != null) maxStack = prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxStackSize;
 
-                if (_holdingAmount < maxStack)
+                if (_heldItemData.m_stack < maxStack)
                 {
                     foreach (var hit in hits)
                     {
                         ItemDrop item = hit.GetComponentInParent<ItemDrop>();
                         if (item != null && item.GetComponent<ZNetView>() != null && item.GetComponent<ZNetView>().IsValid())
                         {
+                            ZDOID uid = item.GetComponent<ZNetView>().GetZDO().m_uid;
+                            if (ReservedItems.Contains(uid)) continue; // Evita duplicação (outro NPC já vai pegar)
+
                             if (_blacklistedObjects.ContainsKey(item.gameObject) && Time.time < _blacklistedObjects[item.gameObject]) continue;
                             string itemName = item.gameObject.name.Replace("(Clone)", "").Trim();
-                            if (itemName == _holdingItem)
+                            if (prefab != null && itemName == prefab.name)
                             {
                                 SetTask("PickupGround", item.gameObject);
+                                ReservedItems.Add(uid);
+                                _reservedZDOID = uid;
                                 return;
                             }
                         }
                     }
                 }
 
-                GameObject holdingPrefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-                if (holdingPrefab != null)
+                Container chest = FindChestFor(_heldItemData, hits);
+                if (chest != null)
                 {
-                    ItemDrop.ItemData holdingItemData = holdingPrefab.GetComponent<ItemDrop>().m_itemData;
-                    Container chest = FindChestFor(holdingItemData, hits);
-                    if (chest != null)
-                    {
-                        SetTask("MoveToChestToStore", chest.gameObject);
-                    }
-                    else
-                    {
-                        Jotunn.Logger.LogWarning($"[AssistantAI] Não achei baú com espaço para {_holdingItem}. Dropando no chão.");
-                        DropHoldingItem(); // Isso vai dropar e a gente não pega mais isso por um tempo
-                    }
+                    SetTask("MoveToChestToStore", chest.gameObject);
+                }
+                else
+                {
+                    Jotunn.Logger.LogWarning($"[AssistantAI] Não achei baú com espaço para {_heldItemData.m_dropPrefab.name}. Dropando no chão.");
+                    DropHoldingItem(); // Isso vai dropar e a gente não pega mais isso por um tempo
                 }
                 return; 
             }
@@ -636,6 +676,9 @@ namespace BaseAssistant
                     ItemDrop item = hit.GetComponentInParent<ItemDrop>();
                     if (item != null && item.GetComponent<ZNetView>() != null && item.GetComponent<ZNetView>().IsValid())
                     {
+                        ZDOID uid = item.GetComponent<ZNetView>().GetZDO().m_uid;
+                        if (ReservedItems.Contains(uid)) continue; // Evita duplicação de múltiplos NPCs pegando
+
                         if (_blacklistedObjects.ContainsKey(item.gameObject) && Time.time < _blacklistedObjects[item.gameObject]) continue;
                         if (item.m_itemData != null) // Aceitamos qualquer item (Stack > 1 ou armas/ferramentas)
                         {
@@ -643,6 +686,8 @@ namespace BaseAssistant
                             if (chest != null)
                             {
                                 SetTask("PickupGround", item.gameObject);
+                                ReservedItems.Add(uid);
+                                _reservedZDOID = uid;
                                 return;
                             }
                         }
@@ -703,18 +748,17 @@ namespace BaseAssistant
                 if (MatchAny(customName, Plugin.TagIgnore.Value.ToLower().Split(','))) return -1000;
 
                 string localizedName = Localization.instance.Localize(rawName).ToLower().Trim();
-                if (customName == localizedName) return 2000; // Supremo
+                if (customName == localizedName) return 2000; // Supremo (nome igualzinho do jogo)
+                if (customName == targetName.Replace("$item_", "")) return 2000; // Supremo (nome original do código)
 
                 bool matchesCustom = false;
-                if (customName.Contains(targetName.Replace("$item_", "")) || targetName.Contains(customName)) matchesCustom = true;
-                else
-                {
-                    if (MatchAny(customName, Plugin.TagWeapons.Value.ToLower().Split(',')) && IsWeapon(targetType)) matchesCustom = true;
-                    if (MatchAny(customName, Plugin.TagArmor.Value.ToLower().Split(',')) && IsArmor(targetType)) matchesCustom = true;
-                    if (MatchAny(customName, Plugin.TagFood.Value.ToLower().Split(',')) && targetType == ItemDrop.ItemData.ItemType.Consumable) matchesCustom = true;
-                    if (MatchAny(customName, Plugin.TagWood.Value.ToLower().Split(',')) && IsWood(targetName)) matchesCustom = true;
-                    if (MatchAny(customName, Plugin.TagMetal.Value.ToLower().Split(',')) && IsMetal(targetName)) matchesCustom = true;
-                }
+                
+                // Se não for o nome exato, verifica se o baú foi nomeado com uma TAG genérica (Ex: "Metais", "Comida")
+                if (MatchAny(customName, Plugin.TagWeapons.Value.ToLower().Split(',')) && IsWeapon(targetType)) matchesCustom = true;
+                if (MatchAny(customName, Plugin.TagArmor.Value.ToLower().Split(',')) && IsArmor(targetType)) matchesCustom = true;
+                if (MatchAny(customName, Plugin.TagFood.Value.ToLower().Split(',')) && targetType == ItemDrop.ItemData.ItemType.Consumable) matchesCustom = true;
+                if (MatchAny(customName, Plugin.TagWood.Value.ToLower().Split(',')) && IsWood(targetName, targetType)) matchesCustom = true;
+                if (MatchAny(customName, Plugin.TagMetal.Value.ToLower().Split(',')) && IsMetal(targetName, targetType)) matchesCustom = true;
 
                 return matchesCustom ? 1000 : -1000;
             }
@@ -722,8 +766,6 @@ namespace BaseAssistant
             if (container.GetInventory().NrOfItems() == 0) return 0; // Baú vazio
 
             bool hasContamination = false;
-            bool hasSameType = false;
-            bool hasSameSubCategory = false;
             bool hasExactItem = false;
 
             foreach (var invItem in container.GetInventory().GetAllItems())
@@ -731,16 +773,11 @@ namespace BaseAssistant
                 if (invItem == null || invItem.m_shared == null) continue;
                 string invName = invItem.m_shared.m_name?.ToLower() ?? "";
                 if (invName == targetName) hasExactItem = true;
-                else if (IsWood(targetName) && IsWood(invName)) hasSameSubCategory = true;
-                else if (IsMetal(targetName) && IsMetal(invName)) hasSameSubCategory = true;
-                else if (invItem.m_shared.m_itemType == targetType) hasSameType = true;
                 else hasContamination = true;
             }
 
             if (hasContamination) return -1000;
             if (hasExactItem) return 100;
-            if (hasSameSubCategory) return 50;
-            if (hasSameType) return 25;
             
             return -1000;
         }
@@ -778,9 +815,10 @@ namespace BaseAssistant
                         }
 
                         int bestScore = GetChestScore(bestChest, invItem, bestCustomName);
-                        if (bestScore > currentScore) // STRICT ANTI-LOOP
+                        if (bestScore >= 1000 && bestScore > currentScore) // APENAS TIRA SE FOR UM BAÚ NOMEADO E MELHOR
                         {
-                            _holdingItem = invItem.m_dropPrefab.name;
+                            _heldItemData = invItem.Clone();
+                            _heldItemData.m_stack = 0;
                             SetTask("MoveToChestToConsolidate", sourceChest.gameObject);
                             return true;
                         }
@@ -806,13 +844,15 @@ namespace BaseAssistant
             return t == ItemDrop.ItemData.ItemType.Shield || t == ItemDrop.ItemData.ItemType.Helmet || t == ItemDrop.ItemData.ItemType.Chest || t == ItemDrop.ItemData.ItemType.Legs || t == ItemDrop.ItemData.ItemType.Shoulder;
         }
 
-        private bool IsWood(string name)
+        private bool IsWood(string name, ItemDrop.ItemData.ItemType type)
         {
+            if (type != ItemDrop.ItemData.ItemType.Material) return false;
             return name.Contains("wood") || name.Contains("log") || name.Contains("bark") || name.Contains("madeira") || name.Contains("lenha");
         }
 
-        private bool IsMetal(string name)
+        private bool IsMetal(string name, ItemDrop.ItemData.ItemType type)
         {
+            if (type != ItemDrop.ItemData.ItemType.Material) return false;
             return name.Contains("ore") || name.Contains("scrap") || name.Contains("copper") || name.Contains("iron") || name.Contains("silver") || name.Contains("tin") || name.Contains("bronze") || name.Contains("metal") || name.Contains("flametal");
         }
 
@@ -840,21 +880,13 @@ namespace BaseAssistant
             return null;
         }
 
-        private void SetTask(string taskName, GameObject target)
-        {
-            _currentTask = taskName;
-            _targetObj = target;
-            _taskTimeout = Plugin.TaskTimeout.Value;
-            _monsterAI.SetFollowTarget(_targetObj);
-        }
-
         private bool IsCloseEnough(GameObject target, float maxDistXZ = 1.5f, float maxDistY = 2.0f)
         {
             if (target == null) return false;
 
-            // NavMesh buffer: Valheim's pathfinding often stops ~2.5m away from items near walls
-            maxDistXZ += 1.5f;
-            maxDistY += 1.5f;
+            // NavMesh buffer TELEPÁTICO: Resolve travamentos contra degraus ou baús no alto
+            maxDistXZ += 3.5f;
+            maxDistY += 3.5f;
 
             Collider[] colliders = target.GetComponentsInChildren<Collider>();
             if (colliders.Length > 0)
@@ -896,21 +928,16 @@ namespace BaseAssistant
             if (IsCloseEnough(_targetObj, d, d))
             {
                 ItemDrop item = _targetObj.GetComponent<ItemDrop>();
-                if (item != null)
+                if (item != null && item.m_itemData != null)
                 {
-                    // Pega o nome do Prefab limpando o "(Clone)"
-                    string prefabName = item.gameObject.name.Replace("(Clone)", "").Trim();
-                    
-                    if (string.IsNullOrEmpty(_holdingItem) || _holdingItem == prefabName)
+                    // Memória Completa: Clonamos o ItemData pra não perder os atributos da arma (durabilidade, nível)
+                    if (_heldItemData == null)
                     {
-                        _holdingItem = prefabName;
-                        _holdingAmount += item.m_itemData.m_stack;
+                        _heldItemData = item.m_itemData.Clone();
                     }
-                    else
+                    else if (_heldItemData.m_dropPrefab.name == item.m_itemData.m_dropPrefab.name)
                     {
-                        // Fallback se algo bugar
-                        _holdingItem = prefabName;
-                        _holdingAmount = item.m_itemData.m_stack;
+                        _heldItemData.m_stack += item.m_itemData.m_stack;
                     }
                     
                     // Animação do Dverger pegando
@@ -921,8 +948,8 @@ namespace BaseAssistant
                     if (item.GetComponent<ZNetView>() != null) item.GetComponent<ZNetView>().Destroy();
                     else Destroy(item.gameObject);
                     
-                    _currentTask = "Idle";
-                    _monsterAI.SetFollowTarget(null);
+                    ClearReservationWithoutRelease(); // Do not release the reservation so other NPCs still ignore it
+                    SetTask("Idle", null); 
                 }
             }
             else
@@ -937,62 +964,54 @@ namespace BaseAssistant
             if (IsCloseEnough(_targetObj, d, d))
             {
                 Container chest = _targetObj.GetComponent<Container>();
-                if (chest != null && chest.GetInventory() != null)
+                if (chest != null && chest.GetInventory() != null && _heldItemData != null)
                 {
-                    GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-                    if (prefab != null)
+                    int initialAmount = _heldItemData.m_stack;
+                    
+                    chest.GetComponent<ZNetView>().ClaimOwnership();
+
+                    // Adiciona de 1 em 1 para preencher apenas o espaço vazio
+                    while (_heldItemData.m_stack > 0)
                     {
-                        ItemDrop drop = prefab.GetComponent<ItemDrop>();
-                        int initialAmount = _holdingAmount;
-                        
-                        chest.GetComponent<ZNetView>().ClaimOwnership();
-
-                        // Adiciona de 1 em 1 para preencher apenas o espaço vazio
-                        while (_holdingAmount > 0)
+                        ItemDrop.ItemData clone = _heldItemData.Clone();
+                        clone.m_stack = 1;
+                        if (chest.GetInventory().CanAddItem(clone))
                         {
-                            ItemDrop.ItemData clone = drop.m_itemData.Clone();
-                            clone.m_stack = 1;
-                            clone.m_dropPrefab = prefab; // <--- EXTREMAMENTE IMPORTANTE PARA O SALVAMENTO!
-                            if (chest.GetInventory().CanAddItem(clone))
-                            {
-                                chest.GetInventory().AddItem(clone);
-                                _holdingAmount--;
-                            }
-                            else
-                            {
-                                break; // Baú encheu
-                            }
-                        }
-                        
-                        if (initialAmount != _holdingAmount)
-                        {
-                            // Ele guardou pelo menos alguma coisa!
-                            ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
-                            if (zanim != null) zanim.SetTrigger("interact");
-                            
-                            chest.SetInUse(true);
-                            StartCoroutine(CloseChest(chest));
-                        }
-
-                        if (_holdingAmount == 0)
-                        {
-                            // Guardou tudo com sucesso
-                            _holdingItem = "";
-                            _currentTask = "Idle";
-                            _monsterAI.SetFollowTarget(null);
+                            chest.GetInventory().AddItem(clone);
+                            _heldItemData.m_stack--;
                         }
                         else
                         {
-                            // Sobrou coisa na mão porque o baú lotou!
-                            Jotunn.Logger.LogInfo($"[AssistantAI] O baú encheu, sobrou {_holdingAmount} {_holdingItem} na mão.");
-                            _blacklistedObjects[chest.gameObject] = Time.time + 120f; // Ignora esse baú por 2 minutos
-                            _currentTask = "Idle";
-                            _monsterAI.SetFollowTarget(null);
-                            // No próximo tick, ele vai rodar FindNewTask() com o que sobrou na mão e procurar outro baú!
+                            break; // Baú encheu
                         }
-                        
-                        transform.LookAt(chest.transform.position);
                     }
+                    
+                    if (initialAmount != _heldItemData.m_stack)
+                    {
+                        // Ele guardou pelo menos alguma coisa!
+                        ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
+                        if (zanim != null) zanim.SetTrigger("interact");
+                        
+                        chest.SetInUse(true);
+                        StartCoroutine(CloseChest(chest));
+                    }
+
+                    if (_heldItemData.m_stack == 0)
+                    {
+                        // Guardou tudo com sucesso
+                        _heldItemData = null;
+                        SetTask("Idle", null);
+                    }
+                    else
+                    {
+                        // Sobrou coisa na mão porque o baú lotou!
+                        Jotunn.Logger.LogInfo($"[AssistantAI] O baú encheu, sobrou {_heldItemData.m_stack} {_heldItemData.m_dropPrefab.name} na mão.");
+                        _blacklistedObjects[chest.gameObject] = Time.time + 120f; // Ignora esse baú por 2 minutos
+                        SetTask("Idle", null);
+                        // No próximo tick, ele vai rodar FindNewTask() com o que sobrou na mão e procurar outro baú!
+                    }
+                    
+                    transform.LookAt(chest.transform.position);
                 }
                 else
                 {
@@ -1016,29 +1035,12 @@ namespace BaseAssistant
 
         private void DropHoldingItem()
         {
-            if (_holdingAmount <= 0 || string.IsNullOrEmpty(_holdingItem)) return;
+            if (_heldItemData == null || _heldItemData.m_stack <= 0) return;
             
-            GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-            if (prefab != null)
-            {
-                // Joga o item no chão na frente dele
-                GameObject dropped = Instantiate(prefab, transform.position + transform.forward * 1f + Vector3.up * 0.5f, Quaternion.identity);
-                ItemDrop drop = dropped.GetComponent<ItemDrop>();
-                if (drop != null)
-                {
-                    drop.m_itemData.m_stack = _holdingAmount;
-                    drop.m_itemData.m_dropPrefab = prefab; // EXTREMAMENTE IMPORTANTE PARA SALVAMENTO DO MUNDO!
-                    // Registra no Valheim que um item novo foi dropado (znetview)
-                    if (dropped.GetComponent<ZNetView>() != null)
-                    {
-                        dropped.GetComponent<ZNetView>().GetZDO().Set("stack", _holdingAmount);
-                    }
-                }
-            }
-            _holdingAmount = 0;
-            _holdingItem = "";
-            _currentTask = "Idle";
-            _monsterAI.SetFollowTarget(null);
+            ItemDrop.DropItem(_heldItemData, _heldItemData.m_stack, transform.position + transform.forward * 1f + Vector3.up * 0.5f, Quaternion.identity);
+            
+            _heldItemData = null;
+            SetTask("Idle", null);
         }
 
         private void ExecuteConsolidateFetch()
@@ -1047,33 +1049,30 @@ namespace BaseAssistant
             if (IsCloseEnough(_targetObj, d, d))
             {
                 Container chest = _targetObj.GetComponent<Container>();
-                if (chest != null && chest.GetInventory() != null)
+                if (chest != null && chest.GetInventory() != null && _heldItemData != null)
                 {
-                    GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-                    if (prefab != null)
+                    string localizedName = _heldItemData.m_shared.m_name;
+                    int currentAmount = chest.GetInventory().CountItems(localizedName);
+                    
+                    if (currentAmount > 0)
                     {
-                        ItemDrop.ItemData itemData = prefab.GetComponent<ItemDrop>().m_itemData;
-                        string localizedName = itemData.m_shared.m_name;
-                        int currentAmount = chest.GetInventory().CountItems(localizedName);
+                        int amountToTake = Mathf.Min(_heldItemData.m_shared.m_maxStackSize, currentAmount);
                         
-                        if (currentAmount > 0)
-                        {
-                            int amountToTake = Mathf.Min(itemData.m_shared.m_maxStackSize, currentAmount);
-                            
-                            chest.GetComponent<ZNetView>().ClaimOwnership();
-                            chest.GetInventory().RemoveItem(localizedName, amountToTake);
-                            
-                            chest.SetInUse(true);
-                            StartCoroutine(CloseChest(chest));
+                        chest.GetComponent<ZNetView>().ClaimOwnership();
+                        chest.GetInventory().RemoveItem(localizedName, amountToTake);
+                        
+                        chest.SetInUse(true);
+                        StartCoroutine(CloseChest(chest));
 
-                            _holdingAmount = amountToTake;
-                            Jotunn.Logger.LogInfo($"[AssistantAI] Saquei {_holdingAmount} {_holdingItem} para organizar/descontaminar.");
-                        }
+                        _heldItemData.m_stack = amountToTake;
+                        Jotunn.Logger.LogInfo($"[AssistantAI] Saquei {_heldItemData.m_stack} {_heldItemData.m_dropPrefab.name} para organizar/descontaminar.");
                     }
                 }
-                
-                _currentTask = "Idle";
-                _monsterAI.SetFollowTarget(null);
+                SetTask("Idle", null);
+            }
+            else
+            {
+                _monsterAI.SetFollowTarget(_targetObj);
             }
         }
 
@@ -1083,41 +1082,36 @@ namespace BaseAssistant
             if (IsCloseEnough(_targetObj, d, d))
             {
                 Container chest = _targetObj.GetComponent<Container>();
-                if (chest != null && chest.GetInventory() != null)
+                if (chest != null && chest.GetInventory() != null && _heldItemData != null)
                 {
-                    GameObject prefab = PrefabManager.Cache.GetPrefab<GameObject>(_holdingItem);
-                    if (prefab != null)
+                    string locName = _heldItemData.m_shared.m_name;
+                    int inChest = chest.GetInventory().CountItems(locName);
+                    int leaveAmount = locName.ToLower().Contains("wood") ? Plugin.LeaveWoodAmount.Value : 
+                                      locName.ToLower().Contains("coal") ? Plugin.LeaveCoalAmount.Value : Plugin.LeaveOreAmount.Value;
+                    
+                    if (inChest > leaveAmount)
                     {
-                        string locName = prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_name;
-                        int inChest = chest.GetInventory().CountItems(locName);
-                        int leaveAmount = locName.ToLower().Contains("wood") ? Plugin.LeaveWoodAmount.Value : 
-                                          locName.ToLower().Contains("coal") ? Plugin.LeaveCoalAmount.Value : Plugin.LeaveOreAmount.Value;
+                        int amountToTake = Mathf.Min(10, inChest - leaveAmount); // Pega até 10 por vez
                         
-                        if (inChest > leaveAmount)
+                        chest.GetComponent<ZNetView>().ClaimOwnership();
+                        chest.GetInventory().RemoveItem(locName, amountToTake);
+                        
+                        chest.SetInUse(true);
+                        StartCoroutine(CloseChest(chest));
+                        
+                        ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
+                        if (zanim != null) zanim.SetTrigger("interact");
+                        
+                        _heldItemData.m_stack = amountToTake;
+                        
+                        if (_targetSmelter != null)
                         {
-                            int amountToTake = Mathf.Min(10, inChest - leaveAmount); // Pega até 10 por vez
-                            
-                            chest.GetComponent<ZNetView>().ClaimOwnership();
-                            chest.GetInventory().RemoveItem(locName, amountToTake);
-                            
-                            chest.SetInUse(true);
-                            StartCoroutine(CloseChest(chest));
-                            
-                            ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
-                            if (zanim != null) zanim.SetTrigger("interact");
-                            
-                            _holdingAmount = amountToTake;
-                            
-                            if (_targetSmelter != null)
-                            {
-                                SetTask("FeedSmelter", _targetSmelter);
-                                return;
-                            }
+                            SetTask("FeedSmelter", _targetSmelter);
+                            return;
                         }
                     }
                 }
-                _currentTask = "Idle";
-                _monsterAI.SetFollowTarget(null);
+                SetTask("Idle", null);
             }
             else
             {
@@ -1131,18 +1125,18 @@ namespace BaseAssistant
             if (IsCloseEnough(_targetObj, d, d))
             {
                 Smelter smelter = _targetObj.GetComponent<Smelter>();
-                if (smelter != null)
+                if (smelter != null && _heldItemData != null)
                 {
                     ZNetView smelterView = smelter.GetComponent<ZNetView>();
                     
                     // Verifica se o item sendo segurado é FUEL
-                    bool isFuel = smelter.m_fuelItem != null && smelter.m_fuelItem.m_itemData.m_shared.m_name == _holdingItem;
+                    bool isFuel = smelter.m_fuelItem != null && smelter.m_fuelItem.m_itemData.m_shared.m_name == _heldItemData.m_shared.m_name;
                     
                     if (isFuel)
                     {
                         float currentFuel = smelterView.GetZDO().GetFloat("fuel", 0f);
                         int spaceLeft = Mathf.CeilToInt(smelter.m_maxFuel - currentFuel);
-                        int amountToFeed = Mathf.Min(spaceLeft, _holdingAmount);
+                        int amountToFeed = Mathf.Min(spaceLeft, _heldItemData.m_stack);
 
                         if (amountToFeed > 0)
                         {
@@ -1153,12 +1147,11 @@ namespace BaseAssistant
                             ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                             if (zanim != null) zanim.SetTrigger("interact");
                             
-                            _holdingAmount -= amountToFeed;
-                            if (_holdingAmount <= 0)
+                            _heldItemData.m_stack -= amountToFeed;
+                            if (_heldItemData.m_stack <= 0)
                             {
-                                _holdingItem = "";
-                                _currentTask = "Idle";
-                                _monsterAI.SetFollowTarget(null);
+                                _heldItemData = null;
+                                SetTask("Idle", null);
                             }
                             return;
                         }
@@ -1167,7 +1160,7 @@ namespace BaseAssistant
                     {
                         int queued = smelterView.GetZDO().GetInt("queued", 0);
                         int spaceLeft = smelter.m_maxOre - queued;
-                        int amountToFeed = Mathf.Min(spaceLeft, _holdingAmount);
+                        int amountToFeed = Mathf.Min(spaceLeft, _heldItemData.m_stack);
                         
                         if (amountToFeed > 0)
                         {
@@ -1175,7 +1168,7 @@ namespace BaseAssistant
                             
                             for(int i = 0; i < amountToFeed; i++)
                             {
-                                smelterView.GetZDO().Set("item" + (queued + i), _holdingItem); 
+                                smelterView.GetZDO().Set("item" + (queued + i), _heldItemData.m_dropPrefab.name); 
                             }
                             
                             smelterView.GetZDO().Set("queued", queued + amountToFeed);
@@ -1184,19 +1177,17 @@ namespace BaseAssistant
                             ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                             if (zanim != null) zanim.SetTrigger("interact");
                             
-                            _holdingAmount -= amountToFeed;
-                            if (_holdingAmount <= 0)
+                            _heldItemData.m_stack -= amountToFeed;
+                            if (_heldItemData.m_stack <= 0)
                             {
-                                _holdingItem = "";
-                                _currentTask = "Idle";
-                                _monsterAI.SetFollowTarget(null);
+                                _heldItemData = null;
+                                SetTask("Idle", null);
                             }
                             return;
                         }
                     }
 
-                    _currentTask = "Idle"; // Forno cheio
-                    _monsterAI.SetFollowTarget(null);
+                    SetTask("Idle", null); // Forno cheio
                 }
             }
             else
@@ -1300,14 +1291,13 @@ namespace BaseAssistant
                         {
                             int amountToTake = Mathf.Min(item.m_stack, item.m_shared.m_maxStackSize);
                             
-                            // O _holdingItem usa o prefab name!
-                            _holdingItem = item.m_dropPrefab?.name; 
-                            if (string.IsNullOrEmpty(_holdingItem)) continue;
+                            if (item.m_dropPrefab == null) continue;
+
+                            _heldItemData = item.Clone();
+                            _heldItemData.m_stack = amountToTake;
 
                             inbox.GetComponent<ZNetView>().ClaimOwnership();
                             inbox.GetInventory().RemoveItem(item, amountToTake);
-                            
-                            _holdingAmount = amountToTake;
                             
                             ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                             if (zanim != null) zanim.SetTrigger("interact");
@@ -1323,8 +1313,7 @@ namespace BaseAssistant
                         }
                     }
                 }
-                _currentTask = "Idle";
-                _monsterAI.SetFollowTarget(null);
+                SetTask("Idle", null);
                 FindNewTask(); // Já emenda para procurar onde guardar
             }
             else

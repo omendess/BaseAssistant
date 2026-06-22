@@ -10,7 +10,8 @@ A IA toma decisões a cada varredura (scan). Ela avalia o ambiente e escolhe o q
 *   **[PRIORIDADE 0] SOBREVIVÊNCIA E SONO (Interruptores Absolutos):**
     *   **Perigo:** Se o assistente for atacado ou houver um evento (Raid/Invasão) na base, ele abandona qualquer tarefa e corre para a Cama (ou Totem) para se esconder.
     *   **Noite:** Se anoitecer, ele encerra o expediente e vai dormir.
-    *   **Desatolamento (Anti-Stuck):** Se a IA perceber que está tentando andar para o mesmo lugar há X segundos sem sair do lugar, ela abandona a tarefa, coloca o objeto na "Lista Negra" por um tempo e se teleporta para destrabar.
+    *   **Desatolamento (Anti-Stuck):** Se a IA perceber que está tentando andar para o mesmo lugar há X segundos sem sair do lugar, ela abandona a tarefa. O alvo (baú ou item) recebe uma penalidade (Blacklist) temporária para que a IA desista dele e faça outra coisa: 15s para baús, 5s para itens soltos.
+    *   **Anti-Duplicação (Reserva Global):** Sempre que um assistente escolhe um item no chão, a ID daquele item (ZDOID) é registrada em um HashSet estático. Isso impede que dois NPCs peguem o mesmo item simultaneamente. Essa reserva só é liberada se o item for deletado do jogo ou se o NPC desistir dele por travamento (Stuck).
 
 *   **[PRIORIDADE 1] CHAINING (Continuar o que já está na mão):**
     *   Se ele já tem "Madeira" nas mãos, a primeira coisa que ele tenta é guardar essa madeira em um baú. Se houver mais madeira no chão e ele tiver espaço na mão, ele cata a madeira do chão antes de ir ao baú.

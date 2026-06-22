@@ -14,6 +14,8 @@ O Assistente já é capaz de navegar pela base, reparar estruturas quebradas em 
 6. **Limites de Produção e Reserva Segura:** O assistente pausa a produção automaticamente se um certo limite de minério ou carvão já foi produzido. Além disso, ele **nunca** esvazia os baús de matérias-primas, preservando uma quantidade de reserva (`LeaveWoodAmount`, `LeaveCoalAmount`, `LeaveOreAmount`).
 7. **Sistema de Desatolamento (Geodata Bypass v2):** O cálculo de distâncias agora é feito mapeando a **Borda (Bounding Box)** dos objetos.
 8. **Nomes nos Baús:** O jogador pode renomear os baús e o assistente usará o nome (baseado na tradução local) para armazenar metais e ligas sem causar problemas de diferença entre maiúsculas/minúsculas.
+9. **Sistema Anti-Duplicação e Reserva Global:** O assistente utiliza um HashSet estático de ZDOIDs para garantir que múltiplos assistentes não tentem pegar o mesmo item no chão simultaneamente, evitando duplicações (clonagem).
+10. **Recuperação Elegante de Tarefas (Stuck Recovery):** Se o assistente ficar travado tentando buscar um item no chão, a punição foi reduzida (5s) para que ele ou outros assistentes tentem novamente mais rápido. Se o alvo for um baú, ele desiste e tenta mais tarde, limpando sempre as reservas pendentes sem vazamentos.
 
 ## ⚙️ Variáveis de Configuração (BepInEx)
 O arquivo `com.omen.baseassistant.cfg` permite customizar:

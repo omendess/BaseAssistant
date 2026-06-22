@@ -15,7 +15,7 @@ namespace BaseAssistant
     {
         public const string PluginGUID = "com.omen.baseassistant";
         public const string PluginName = "Base Assistant";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.1";
 
         public static ConfigEntry<float> WorkRadius;
         public static ConfigEntry<float> RepairDistance;

@@ -15,7 +15,7 @@ namespace BaseAssistant
     {
         public const string PluginGUID = "com.singularitydot.baseassistant";
         public const string PluginName = "Base Assistant";
-        public const string PluginVersion = "0.1.2";
+        public const string PluginVersion = "0.1.3";
 
         public static ConfigEntry<float> WorkRadius;
         public static ConfigEntry<float> RepairDistance;
@@ -38,6 +38,7 @@ namespace BaseAssistant
         public static ConfigEntry<bool> EnableSmelting;
         public static ConfigEntry<bool> EnableLooting;
         public static ConfigEntry<bool> EnableSorting;
+        public static ConfigEntry<bool> EnableAutoLabeling;
 
         public static ConfigEntry<string> TagWeapons;
         public static ConfigEntry<string> TagArmor;
@@ -56,6 +57,7 @@ namespace BaseAssistant
             EnableSmelting = Config.Bind("1. Geral", "AtivarFornalhas", true, "Permite que o assistente abasteça fornalhas e fundições.");
             EnableLooting = Config.Bind("1. Geral", "AtivarColetaDeChao", true, "Permite que o assistente pegue itens soltos no chão.");
             EnableSorting = Config.Bind("1. Geral", "AtivarOrganizacao", true, "Permite que o assistente organize itens do baú mestre para os outros baús.");
+            EnableAutoLabeling = Config.Bind("1. Geral", "AtivarAutoRotulagem", true, "Permite que o assistente renomeie baús vazios automaticamente ao guardar itens.");
 
             WorkRadius = Config.Bind("1. Geral", "RaioDeTrabalho", 30f, "Raio de ação do assistente a partir do Totem.");
             RepairHealthThreshold = Config.Bind("1. Geral", "VidaParaReparo", 0.8f, "Porcentagem de vida (0.0 a 1.0) para que o assistente decida consertar uma estrutura.");
@@ -63,12 +65,12 @@ namespace BaseAssistant
             NpcWalkSpeed = Config.Bind("1. Geral", "VelocidadeAndar", 3.0f, "Velocidade do NPC quando está andando.");
             NpcRunSpeed = Config.Bind("1. Geral", "VelocidadeCorrer", 6.0f, "Velocidade do NPC quando está correndo para concluir uma tarefa.");
             
-            TagWeapons = Config.Bind("5. Regras de Baus", "TagArmas", "armas, weapons, arsenal", "Palavras-chave (separadas por vírgula) que a IA reconhecerá no nome do baú para guardar Armas e Ferramentas.");
-            TagArmor = Config.Bind("5. Regras de Baus", "TagArmadura", "armaduras, armor, equipamentos", "Palavras-chave que a IA reconhecerá para guardar Armaduras e Escudos.");
-            TagFood = Config.Bind("5. Regras de Baus", "TagComida", "comida, food, rango, consumiveis", "Palavras-chave que a IA reconhecerá para guardar Comidas e Poções.");
-            TagWood = Config.Bind("5. Regras de Baus", "TagMadeira", "wood, lenha", "Palavras-chave que a IA reconhecerá para guardar Madeiras em geral.");
-            TagMetal = Config.Bind("5. Regras de Baus", "TagMetal", "metal, minério, ore", "Palavras-chave que a IA reconhecerá para guardar Minérios e Metais fundidos.");
-            TagIgnore = Config.Bind("5. Regras de Baus", "TagIgnorar", "ignorar, privado, nao tocar, ignore", "Palavras-chave que a IA reconhecerá para IGNORAR completamente o baú.");
+            TagWeapons = Config.Bind("5. Regras de Baus", "TagArmas", "armas, weapons, arsenal", "Palavras-chave (separadas por vírgula) que o assistente reconhecerá no nome do baú para guardar Armas e Ferramentas.");
+            TagArmor = Config.Bind("5. Regras de Baus", "TagArmadura", "armaduras, armor, equipamentos", "Palavras-chave que o assistente reconhecerá para guardar Armaduras e Escudos.");
+            TagFood = Config.Bind("5. Regras de Baus", "TagComida", "comida, food, rango, consumiveis", "Palavras-chave que o assistente reconhecerá para guardar Comidas e Poções.");
+            TagWood = Config.Bind("5. Regras de Baus", "TagMadeira", "wood, lenha", "Palavras-chave que o assistente reconhecerá para guardar Madeiras em geral.");
+            TagMetal = Config.Bind("5. Regras de Baus", "TagMetal", "metal, minério, ore", "Palavras-chave que o assistente reconhecerá para guardar Minérios e Metais fundidos.");
+            TagIgnore = Config.Bind("5. Regras de Baus", "TagIgnorar", "ignorar, privado, nao tocar, ignore", "Palavras-chave que o assistente reconhecerá para IGNORAR completamente o baú.");
             
             string distWarning = "\n[AVISO] Alterar as distâncias de interação pode deixar o visual do jogo estranho e algumas vezes macabro (telecinese e itens flutuando).\n[Warning] Changing interaction distances may cause weird or macabre visual behaviors (telekinesis and floating items).";
 
@@ -93,6 +95,8 @@ namespace BaseAssistant
             // O Jotunn nos avisa quando todos os prefabs originais do jogo (Vanilla) estiverem prontos
             PrefabManager.OnVanillaPrefabsAvailable += ModifyClonedPrefabs;
             PrefabManager.OnVanillaPrefabsAvailable += CreateAssistantPrefab;
+            
+            CommandManager.Instance.AddConsoleCommand(new ClearChestsCommand());
         }
 
         private void RegisterPieces()
@@ -190,7 +194,7 @@ namespace BaseAssistant
 
         private void CreateAssistantPrefab()
         {
-            // Pega o prefab do Dverger (anão) porque ele já tem AI, Animações de andar, e Corpo físico
+            // Pega o prefab do Dverger (anão) porque ele já tem animações de andar, e corpo físico
             GameObject dvergerPrefab = PrefabManager.Cache.GetPrefab<GameObject>("Dverger");
             if (dvergerPrefab == null)
             {
@@ -222,7 +226,7 @@ namespace BaseAssistant
                 monsterAI.m_idleSound = new EffectList();
             }
 
-            // Vamos adicionar o NOSSO script de Inteligência Artificial aqui:
+            // Vamos adicionar o NOSSO script de lógica do Assistente aqui:
             assistantPrefab.AddComponent<AssistantAI>();
 
             // Avisa o Jotunn para adicionar nosso novo NPC no registro do jogo
@@ -233,6 +237,45 @@ namespace BaseAssistant
             
             // Desregistramos o evento para não rodar duas vezes
             PrefabManager.OnVanillaPrefabsAvailable -= CreateAssistantPrefab;
+        }
+    }
+
+    public class ClearChestsCommand : ConsoleCommand
+    {
+        public override string Name => "limparbaus";
+        public override string Help => "Apaga o texto (rótulo) de todos os baús na área carregada (Comando do BaseAssistant).";
+
+        public override void Run(string[] args)
+        {
+            if (Player.m_localPlayer == null)
+            {
+                Jotunn.Logger.LogWarning("Você precisa estar no jogo com um personagem para usar este comando.");
+                return;
+            }
+
+            int count = 0;
+            Container[] chests = UnityEngine.Object.FindObjectsOfType<Container>();
+            foreach (var chest in chests)
+            {
+                ZNetView view = chest.GetComponent<ZNetView>();
+                if (view != null && view.IsValid())
+                {
+                    string currentText = view.GetZDO().GetString("text", "");
+                    if (!string.IsNullOrEmpty(currentText))
+                    {
+                        view.ClaimOwnership();
+                        view.GetZDO().Set("text", "");
+                        count++;
+                    }
+                }
+            }
+            
+            string msg = $"[BaseAssistant] {count} baús tiveram seus rótulos apagados com sucesso.";
+            Jotunn.Logger.LogInfo(msg);
+            if (Console.instance != null)
+            {
+                Console.instance.Print(msg);
+            }
         }
     }
 }

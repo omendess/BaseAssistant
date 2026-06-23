@@ -31,5 +31,3 @@ O arquivo `com.singularitydot.baseassistant.cfg` permite customizar:
 * **Novas Integrações Industriais:** Moinhos, rodas de fiar e fornos de pão.
 * **Organização Total de Estoque:** Refinar ainda mais as pontuações do baú baseado em tipos específicos (Ex: guardar resina com madeira).
 
----
-*Documentação gerada pelo Sistema de Encerramento (Antigravity).*

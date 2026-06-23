@@ -155,6 +155,36 @@ namespace BaseAssistant
             }
         }
 
+        private static Dictionary<string, float> _messageCooldowns = new Dictionary<string, float>();
+
+        private void SayMessage(string msgId, string text, float cooldownMinutes = 3f, bool force = false)
+        {
+            Player closestPlayer = Player.GetClosestPlayer(transform.position, 15f);
+            if (closestPlayer == null) return; // Só fala se tiver player perto
+
+            if (!force && _messageCooldowns.ContainsKey(msgId) && Time.time < _messageCooldowns[msgId]) return;
+
+            // Lógica do Porta-Voz (Voice Leader) - Apenas o NPC mais próximo do jogador fala
+            AssistantAI[] allNpcs = UnityEngine.Object.FindObjectsOfType<AssistantAI>();
+            AssistantAI closestNpc = this;
+            float closestDist = Vector3.Distance(transform.position, closestPlayer.transform.position);
+
+            foreach (var npc in allNpcs)
+            {
+                float dist = Vector3.Distance(npc.transform.position, closestPlayer.transform.position);
+                if (dist < closestDist)
+                {
+                    closestNpc = npc;
+                    closestDist = dist;
+                }
+            }
+
+            if (closestNpc != this) return; // Deixa o outro falar
+
+            Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", text, false);
+            _messageCooldowns[msgId] = Time.time + (cooldownMinutes * 60f);
+        }
+
         private void CheckForPlayerGreeting()
         {
             if (_greetCooldown <= 0f)
@@ -163,7 +193,7 @@ namespace BaseAssistant
                 if (closestPlayer != null)
                 {
                     transform.LookAt(closestPlayer.transform.position);
-                    Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", $"Olá {closestPlayer.GetPlayerName()}, trabalhando duro na base!", false);
+                    SayMessage("greet", $"Olá {closestPlayer.GetPlayerName()}, trabalhando duro na base!", 5f);
                     _greetCooldown = 60f;
                 }
             }
@@ -237,7 +267,7 @@ namespace BaseAssistant
             if (isNight && !_wasNight)
             {
                 string phrase = _sleepPhrases[UnityEngine.Random.Range(0, _sleepPhrases.Length)];
-                Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", phrase, false);
+                SayMessage("night_start", phrase, 10f, true);
                 _wasNight = true;
                 
                 GameObject bed = FindBed();
@@ -248,7 +278,7 @@ namespace BaseAssistant
                 }
                 else
                 {
-                    Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", "Trabalhei o dia todo e não me deram nem uma cama... Que exploração!", false);
+                    SayMessage("no_bed", "Trabalhei o dia todo e não me deram nem uma cama... Que exploração!", 10f, true);
                     GameObject totem = FindTotem();
                     if (totem != null)
                     {
@@ -260,7 +290,7 @@ namespace BaseAssistant
             else if (!isNight && _wasNight)
             {
                 string phrase = _wakePhrases[UnityEngine.Random.Range(0, _wakePhrases.Length)];
-                Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", phrase, false);
+                SayMessage("morning_start", phrase, 10f, true);
                 _wasNight = false;
                 _isSleeping = false;
                 SetTask("Idle", null);
@@ -298,7 +328,7 @@ namespace BaseAssistant
                 if (_currentTask != "Panic")
                 {
                     SetTask("Panic", null);
-                    Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", "Socorro! Monstros na base!", false);
+                    SayMessage("panic_start", "Socorro! Monstros na base!", 5f, true);
                 }
                 
                 GameObject bed = FindBed();
@@ -317,7 +347,7 @@ namespace BaseAssistant
             else if (_currentTask == "Panic")
             {
                 SetTask("Idle", null);
-                Chat.instance.SetNpcText(gameObject, Vector3.up * 1.5f, 20f, 5f, "", "Ufa, parece seguro agora...", false);
+                SayMessage("panic_end", "Ufa, parece seguro agora...", 5f, true);
             }
 
             if (_isSleeping) return;
@@ -436,10 +466,17 @@ namespace BaseAssistant
                             if (fuelChest != null)
                             {
                                 _heldItemData = smelter.m_fuelItem.m_itemData.Clone();
+                                _heldItemData.m_dropPrefab = smelter.m_fuelItem.gameObject;
                                 _heldItemData.m_stack = 0;
                                 _targetSmelter = smelter.gameObject;
                                 SetTask("MoveToChestToFetch", fuelChest.gameObject);
                                 return true;
+                            }
+                            else
+                            {
+                                // Faltou combustível para essa máquina!
+                                string itemNameLocalized = fuelName.ToLower().Contains("coal") ? "Carvão" : "Madeira para queimar";
+                                SayMessage("no_fuel_" + fuelName, $"Atenção chefe! Falta {itemNameLocalized} nos baús!", 5f);
                             }
                         }
                     }
@@ -455,6 +492,16 @@ namespace BaseAssistant
                             string rawItemName = conversion.m_from.m_itemData.m_shared.m_name;
                             string producedItemName = conversion.m_to.m_itemData.m_shared.m_name;
 
+                            // Fuel Blacklist: Proteger madeiras nobres de virarem carvão
+                            if (producedItemName.ToLower().Contains("coal"))
+                            {
+                                string lowerRaw = rawItemName.ToLower();
+                                if (lowerRaw.Contains("finewood") || lowerRaw.Contains("roundlog") || lowerRaw.Contains("elderbark") || lowerRaw.Contains("yggdrasil"))
+                                {
+                                    continue; // Pula essa conversão para proteger a madeira
+                                }
+                            }
+
                             // Limites de Produção
                             int producedCount = CountItemInBase(producedItemName, hits);
                             int maxAllowed = producedItemName.ToLower().Contains("coal") ? Plugin.MaxCoalAmount.Value : Plugin.MaxSmeltedMetal.Value;
@@ -466,6 +513,7 @@ namespace BaseAssistant
                                 if (oreChest != null)
                                 {
                                     _heldItemData = conversion.m_from.m_itemData.Clone();
+                                    _heldItemData.m_dropPrefab = conversion.m_from.gameObject;
                                     _heldItemData.m_stack = 0;
                                     _targetSmelter = smelter.gameObject;
                                     SetTask("MoveToChestToFetch", oreChest.gameObject);
@@ -574,10 +622,28 @@ namespace BaseAssistant
             int count = 0;
             foreach (var hit in hits)
             {
+                // 1. Conta nos Baús
                 Container container = hit.GetComponentInParent<Container>();
                 if (container != null && container.GetInventory() != null && !container.name.Contains("personal"))
                 {
                     count += container.GetInventory().CountItems(localizedName);
+                    continue;
+                }
+                
+                // 2. Conta no Chão
+                ItemDrop drop = hit.GetComponentInParent<ItemDrop>();
+                if (drop != null && drop.m_itemData != null && drop.m_itemData.m_shared.m_name == localizedName)
+                {
+                    count += drop.m_itemData.m_stack;
+                    continue;
+                }
+
+                // 3. Conta na Mão de outros NPCs
+                AssistantAI npc = hit.GetComponentInParent<AssistantAI>();
+                if (npc != null && npc._heldItemData != null && npc._heldItemData.m_shared.m_name == localizedName)
+                {
+                    count += npc._heldItemData.m_stack;
+                    continue;
                 }
             }
             return count;
@@ -700,6 +766,9 @@ namespace BaseAssistant
             {
                 if (CheckAndSetConsolidationTask(hits)) return;
             }
+
+            // Se chegou até aqui, nenhuma tarefa foi encontrada (Base 100% organizada)
+            SayMessage("all_done", "Base 100% limpa e organizada. Pausa para o hidromel!", 60f);
         }
 
         private Container FindChestFor(ItemDrop.ItemData targetItem, Collider[] hits)
@@ -967,6 +1036,13 @@ namespace BaseAssistant
                 if (chest != null && chest.GetInventory() != null && _heldItemData != null)
                 {
                     int initialAmount = _heldItemData.m_stack;
+                    bool wasEmpty = chest.GetInventory().NrOfItems() == 0;
+                    string itemName = _heldItemData.m_shared.m_name;
+                    string localizedName = Localization.instance.Localize(itemName).Trim();
+                    if (!string.IsNullOrEmpty(localizedName))
+                    {
+                        localizedName = char.ToUpper(localizedName[0]) + localizedName.Substring(1);
+                    }
                     
                     chest.GetComponent<ZNetView>().ClaimOwnership();
 
@@ -989,6 +1065,54 @@ namespace BaseAssistant
                     if (initialAmount != _heldItemData.m_stack)
                     {
                         // Ele guardou pelo menos alguma coisa!
+                        
+                        // AUTO-LABELING
+                        if (wasEmpty && Plugin.EnableAutoLabeling.Value)
+                        {
+                            ZNetView zNetView = chest.GetComponent<ZNetView>();
+                            if (zNetView != null && zNetView.IsValid())
+                            {
+                                zNetView.GetZDO().Set("text", localizedName);
+                                Jotunn.Logger.LogInfo($"[AssistantAI] Auto-Labeling: Baú batizado como '{localizedName}'");
+
+                                // Mass-Labeling
+                                string targetName = itemName.ToLower();
+                                if (IsWood(targetName, _heldItemData.m_shared.m_itemType) || 
+                                    IsMetal(targetName, _heldItemData.m_shared.m_itemType) || 
+                                    targetName.Contains("stone") || targetName.Contains("coal"))
+                                {
+                                    Collider[] hits = Physics.OverlapSphere(chest.transform.position, 2.5f);
+                                    foreach (var hit in hits)
+                                    {
+                                        Container adjChest = hit.GetComponentInParent<Container>();
+                                        if (adjChest != null && adjChest != chest && adjChest.GetInventory() != null)
+                                        {
+                                            float distX = Mathf.Abs(adjChest.transform.position.x - chest.transform.position.x);
+                                            float distZ = Mathf.Abs(adjChest.transform.position.z - chest.transform.position.z);
+                                            
+                                            // Verifica se o baú está na mesma 'coluna' vertical (margem de erro de 0.5m no eixo X e Z)
+                                            if (distX < 0.5f && distZ < 0.5f)
+                                            {
+                                                if (adjChest.GetInventory().NrOfItems() == 0) // Baú adjacente vazio
+                                                {
+                                                    ZNetView adjNetView = adjChest.GetComponent<ZNetView>();
+                                                    if (adjNetView != null && adjNetView.IsValid())
+                                                    {
+                                                        string currentText = adjNetView.GetZDO().GetString("text", "");
+                                                        if (string.IsNullOrEmpty(currentText)) // Só batiza se não tiver nome nenhum
+                                                        {
+                                                            adjNetView.ClaimOwnership();
+                                                            adjNetView.GetZDO().Set("text", localizedName);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                         if (zanim != null) zanim.SetTrigger("interact");
                         
@@ -1129,20 +1253,30 @@ namespace BaseAssistant
                 {
                     ZNetView smelterView = smelter.GetComponent<ZNetView>();
                     
-                    // Verifica se o item sendo segurado é FUEL
                     bool isFuel = smelter.m_fuelItem != null && smelter.m_fuelItem.m_itemData.m_shared.m_name == _heldItemData.m_shared.m_name;
                     
+                    string prefabName = _heldItemData.m_dropPrefab != null ? _heldItemData.m_dropPrefab.name : _heldItemData.m_shared.m_name;
+                    // Removido o Replace("(Clone)", "") para enviar exatamente o nome do prefab como o player faria
+
+                    Jotunn.Logger.LogWarning($"[AssistantAI] ExecuteFeedSmelter. isFuel={isFuel}, prefabName={prefabName}, IsOwner={smelterView.IsOwner()}");
+
                     if (isFuel)
                     {
                         float currentFuel = smelterView.GetZDO().GetFloat("fuel", 0f);
-                        int spaceLeft = Mathf.CeilToInt(smelter.m_maxFuel - currentFuel);
+                        int spaceLeft = Mathf.FloorToInt(smelter.m_maxFuel - currentFuel);
                         int amountToFeed = Mathf.Min(spaceLeft, _heldItemData.m_stack);
+                        
+                        Jotunn.Logger.LogWarning($"[AssistantAI] Feed FUEL: current={currentFuel}, space={spaceLeft}, amountToFeed={amountToFeed}");
 
                         if (amountToFeed > 0)
                         {
-                            smelterView.ClaimOwnership();
+                            if (smelterView.IsOwner() == false)
+                            {
+                                smelterView.ClaimOwnership();
+                            }
+                            
                             smelterView.GetZDO().Set("fuel", currentFuel + amountToFeed);
-                            smelter.m_fuelAddedEffects.Create(transform.position, Quaternion.identity);
+                            smelterView.InvokeRPC(ZNetView.Everybody, "AddFuelItem");
                             
                             ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                             if (zanim != null) zanim.SetTrigger("interact");
@@ -1156,27 +1290,55 @@ namespace BaseAssistant
                             return;
                         }
                     }
-                    else // Se não é fuel, então é ORE (minério / madeira para carvoaria)
+                    else 
                     {
                         int queued = smelterView.GetZDO().GetInt("queued", 0);
                         int spaceLeft = smelter.m_maxOre - queued;
                         int amountToFeed = Mathf.Min(spaceLeft, _heldItemData.m_stack);
                         
+                        bool isAllowed = false;
+                        if (smelter.m_conversion != null)
+                        {
+                            foreach (var conv in smelter.m_conversion)
+                            {
+                                if (conv.m_from != null && conv.m_from.gameObject.name == prefabName)
+                                {
+                                    isAllowed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        Jotunn.Logger.LogWarning($"[AssistantAI] Feed ORE: queued={queued}, space={spaceLeft}, amountToFeed={amountToFeed}, isAllowed={isAllowed}");
+
                         if (amountToFeed > 0)
                         {
-                            smelterView.ClaimOwnership();
-                            
-                            for(int i = 0; i < amountToFeed; i++)
+                            if (!isAllowed)
                             {
-                                smelterView.GetZDO().Set("item" + (queued + i), _heldItemData.m_dropPrefab.name); 
+                                Jotunn.Logger.LogWarning($"[AssistantAI] ERROR: Smelter {smelter.name} DOES NOT ALLOW item {prefabName}!");
+                                DropHoldingItem();
+                                SetTask("Idle", null);
+                                return;
+                            }
+
+                            if (smelterView.IsOwner() == false)
+                            {
+                                smelterView.ClaimOwnership();
                             }
                             
+                            for (int i = 0; i < amountToFeed; i++)
+                            {
+                                smelterView.GetZDO().Set("item" + (queued + i).ToString(), prefabName);
+                            }
                             smelterView.GetZDO().Set("queued", queued + amountToFeed);
-                            smelter.m_oreAddedEffects.Create(transform.position, Quaternion.identity);
+                            smelterView.InvokeRPC(ZNetView.Everybody, "AddOreItem");
                             
                             ZSyncAnimation zanim = GetComponent<ZSyncAnimation>();
                             if (zanim != null) zanim.SetTrigger("interact");
                             
+                            int queuedAfter = smelterView.GetZDO().GetInt("queued", 0);
+                            Jotunn.Logger.LogWarning($"[AssistantAI] Queued BEFORE: {queued}, AFTER ZDO: {queuedAfter}");
+
                             _heldItemData.m_stack -= amountToFeed;
                             if (_heldItemData.m_stack <= 0)
                             {
@@ -1322,6 +1484,6 @@ namespace BaseAssistant
             }
         }
 
-        // Fim da IA
+        // Fim da Assistente
     }
 }

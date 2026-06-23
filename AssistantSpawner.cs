@@ -1,4 +1,5 @@
 using UnityEngine;
+using HarmonyLib;
 
 namespace BaseAssistant
 {
@@ -93,6 +94,36 @@ namespace BaseAssistant
                     }
                 }
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), "PlacePiece")]
+    public static class Player_PlacePiece_Patch
+    {
+        public static bool Prefix(Player __instance, Piece piece)
+        {
+            if (piece != null && piece.gameObject.name.Contains("AssistantTotem"))
+            {
+                int count = 0;
+                AssistantSpawner[] allSpawners = Object.FindObjectsOfType<AssistantSpawner>();
+                foreach (var spawner in allSpawners)
+                {
+                    ZNetView nview = spawner.GetComponent<ZNetView>();
+                    if (nview == null || nview.GetZDO() == null) continue; // Ignora o "Fantasma" de construção e prefabs soltos
+
+                    if (Vector3.Distance(__instance.transform.position, spawner.transform.position) < Plugin.WorkRadius.Value)
+                    {
+                        count++;
+                    }
+                }
+                
+                if (count >= 3)
+                {
+                    __instance.Message(MessageHud.MessageType.Center, "Limite de 3 Assistentes por base atingido!");
+                    return false; // Bloqueia a colocação da peça
+                }
+            }
+            return true;
         }
     }
 }

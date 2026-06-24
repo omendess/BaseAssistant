@@ -33,3 +33,18 @@ O NPC ia até a fornalha, tocava a animação de abastecer repetidas vezes, mas 
 1. Substituição do arredondamento de `Mathf.CeilToInt` para `Mathf.FloorToInt` na contagem de combustível, garantindo que a fornalha nunca receba 1 unidade a mais do que o seu limite máximo matemático.
 2. Criação de um laço de repetição (`for loop`) na injeção ZDO dos minérios. Agora o Assistente escreve com precisão as strings `item0`, `item1`, `item2`, etc., até preencher completamente a quantidade declarada na variável `queued`.
 3. Invocação dos RPCs puramente visuais (`AddFuelItem` e `AddOreItem`) logo após a escrita na memória ZDO, ativando as partículas e sons nativos de inserção sem depender do processamento em rede do item em si.
+
+## 3. Assistente não permanecia na cama ao dormir (Loop de Wander)
+**Status:** ✅ Corrigido e Validado
+
+**Sintoma:** 
+Ao anoitecer, o Assistente recebia a tarefa `GoToSleep` e ia até a cama. Porém, ao chegar perto (3 metros), ele não deitava e acabava saindo caminhando sem rumo pela base ou entrava em um loop eterno de tentar dormir novamente.
+
+**Causa:**
+Ao alcançar a cama, o código alterava o `_currentTask` para `"Idle"` e definia `_monsterAI.SetFollowTarget(null)`. Isso causava dois problemas:
+1. Sem um alvo, a rotina nativa (`MonsterAI`) assumia o controle e iniciava uma caminhada aleatória, afastando-o da cama.
+2. Como a tarefa virava `"Idle"`, no ciclo seguinte o código via que era noite e forçava o Assistente a iniciar `GoToSleep` repetidas vezes.
+
+**Solução Aplicada:**
+1. A tarefa `GoToSleep` **não** é mais convertida para `"Idle"` ao atingir o destino, mantendo a referência da cama segura em `_targetObj`.
+2. Adicionada uma trava na rotina de `Update()`: se `_isSleeping` for verdadeiro, a posição do Assistente é fixada no colchão (`+ Vector3.up * 0.8f`) e a rotação é travada em `Euler(-90, 0, 0)`, forçando o modelo a deitar fisicamente. A velocidade do Rigidbody é zerada.

@@ -1,6 +1,6 @@
 {
   "name": "BaseAssistant",
-  "version_number": "0.1.3",
+  "version_number": "0.1.4",
   "website_url": "https://github.com/SingularityDot/BaseAssistant",
   "description": "An autonomous assistant for your Valheim base. Automatically repairs structures, fuels kilns, collects items from the ground, and organizes your chests with strict sorting rules.",
   "dependencies": [

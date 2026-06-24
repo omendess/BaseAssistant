@@ -16,6 +16,8 @@ O Assistente já é capaz de navegar pela base, reparar estruturas quebradas em 
 8. **Nomes nos Baús:** O jogador pode renomear os baús e o assistente usará o nome (baseado na tradução local) para armazenar metais e ligas sem causar problemas de diferença entre maiúsculas/minúsculas.
 9. **Sistema Anti-Duplicação e Reserva Global:** O assistente utiliza um HashSet estático de ZDOIDs para garantir que múltiplos assistentes não tentem pegar o mesmo item no chão simultaneamente, evitando duplicações (clonagem).
 10. **Recuperação Elegante de Tarefas (Stuck Recovery):** Se o assistente ficar travado tentando buscar um item no chão, a punição foi reduzida (5s) para que ele ou outros assistentes tentem novamente mais rápido. Se o alvo for um baú, ele desiste e tenta mais tarde, limpando sempre as reservas pendentes sem vazamentos.
+11. **Rebaixamento Dinâmico (Round-Robin):** Elimina a "visão de túnel" do assistente, forçando-o a alternar tarefas (ex: buscar no chão, organizar baús, abastecer fornalha) de forma orgânica, em vez de focar apenas em uma única função.
+12. **Navegação de Repouso Aprimorada:** O assistente não tenta mais escalar ou subir em cima da cama ao ir dormir. O teleporte do acordar agora possui um offset preciso no chão, corrigindo bugs onde ele flutuava no ar.
 
 ## ⚙️ Variáveis de Configuração (BepInEx)
 O arquivo `com.singularitydot.baseassistant.cfg` permite customizar:

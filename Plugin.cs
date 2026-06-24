@@ -15,7 +15,7 @@ namespace BaseAssistant
     {
         public const string PluginGUID = "com.singularitydot.baseassistant";
         public const string PluginName = "Base Assistant";
-        public const string PluginVersion = "0.1.3";
+        public const string PluginVersion = "0.1.4";
 
         public static ConfigEntry<float> WorkRadius;
         public static ConfigEntry<float> RepairDistance;
@@ -29,7 +29,12 @@ namespace BaseAssistant
         public static ConfigEntry<float> RepairHealthThreshold;
         public static ConfigEntry<float> AoERepairRadius;
         public static ConfigEntry<int> MaxCoalAmount;
-        public static ConfigEntry<int> MaxSmeltedMetal;
+        public static ConfigEntry<int> LeaveCopperOre;
+        public static ConfigEntry<int> LeaveTinOre;
+        public static ConfigEntry<int> LeaveIronOre;
+        public static ConfigEntry<int> LeaveSilverOre;
+        public static ConfigEntry<int> LeaveBlackMetalScrap;
+        public static ConfigEntry<int> LeaveFlametalOre;
         public static ConfigEntry<int> LeaveWoodAmount;
         public static ConfigEntry<int> LeaveCoalAmount;
         public static ConfigEntry<int> LeaveOreAmount;
@@ -49,44 +54,54 @@ namespace BaseAssistant
 
         private readonly Harmony harmony = new Harmony(PluginGUID);
 
+        private ConfigEntry<T> BindSynced<T>(string section, string key, T defaultValue, string description)
+        {
+            return Config.Bind(section, key, defaultValue, new ConfigDescription(description, null, new ConfigurationManagerAttributes { IsAdminOnly = true }));
+        }
+
         private void Awake()
         {
             harmony.PatchAll();
             
-            EnableRepairing = Config.Bind("1. Geral", "AtivarReparos", true, "Permite que o assistente repare estruturas danificadas.");
-            EnableSmelting = Config.Bind("1. Geral", "AtivarFornalhas", true, "Permite que o assistente abasteça fornalhas e fundições.");
-            EnableLooting = Config.Bind("1. Geral", "AtivarColetaDeChao", true, "Permite que o assistente pegue itens soltos no chão.");
-            EnableSorting = Config.Bind("1. Geral", "AtivarOrganizacao", true, "Permite que o assistente organize itens do baú mestre para os outros baús.");
-            EnableAutoLabeling = Config.Bind("1. Geral", "AtivarAutoRotulagem", true, "Permite que o assistente renomeie baús vazios automaticamente ao guardar itens.");
+            EnableRepairing = BindSynced("1. Geral", "AtivarReparos", true, "Permite que o assistente repare estruturas danificadas.");
+            EnableSmelting = BindSynced("1. Geral", "AtivarFornalhas", true, "Permite que o assistente abasteça fornalhas e fundições.");
+            EnableLooting = BindSynced("1. Geral", "AtivarColetaDeChao", true, "Permite que o assistente pegue itens soltos no chão.");
+            EnableSorting = BindSynced("1. Geral", "AtivarOrganizacao", true, "Permite que o assistente organize itens do baú mestre para os outros baús.");
+            EnableAutoLabeling = BindSynced("1. Geral", "AtivarAutoRotulagem", true, "Permite que o assistente renomeie baús vazios automaticamente ao guardar itens.");
 
-            WorkRadius = Config.Bind("1. Geral", "RaioDeTrabalho", 30f, "Raio de ação do assistente a partir do Totem.");
-            RepairHealthThreshold = Config.Bind("1. Geral", "VidaParaReparo", 0.8f, "Porcentagem de vida (0.0 a 1.0) para que o assistente decida consertar uma estrutura.");
-            AoERepairRadius = Config.Bind("1. Geral", "RaioReparoEmArea", 10.0f, "Raio (em metros) em volta da peça que ele vai consertar tudo de uma vez com o poder da telepatia.");
-            NpcWalkSpeed = Config.Bind("1. Geral", "VelocidadeAndar", 3.0f, "Velocidade do NPC quando está andando.");
-            NpcRunSpeed = Config.Bind("1. Geral", "VelocidadeCorrer", 6.0f, "Velocidade do NPC quando está correndo para concluir uma tarefa.");
+            WorkRadius = BindSynced("1. Geral", "RaioDeTrabalho", 30f, "Raio de ação do assistente a partir do Totem.");
+            RepairHealthThreshold = BindSynced("1. Geral", "VidaParaReparo", 0.8f, "Porcentagem de vida (0.0 a 1.0) para que o assistente decida consertar uma estrutura.");
+            AoERepairRadius = BindSynced("1. Geral", "RaioReparoEmArea", 10.0f, "Raio (em metros) em volta da peça que ele vai consertar tudo de uma vez com o poder da telepatia.");
+            NpcWalkSpeed = BindSynced("1. Geral", "VelocidadeAndar", 3.0f, "Velocidade do NPC quando está andando.");
+            NpcRunSpeed = BindSynced("1. Geral", "VelocidadeCorrer", 6.0f, "Velocidade do NPC quando está correndo para concluir uma tarefa.");
             
-            TagWeapons = Config.Bind("5. Regras de Baus", "TagArmas", "armas, weapons, arsenal", "Palavras-chave (separadas por vírgula) que o assistente reconhecerá no nome do baú para guardar Armas e Ferramentas.");
-            TagArmor = Config.Bind("5. Regras de Baus", "TagArmadura", "armaduras, armor, equipamentos", "Palavras-chave que o assistente reconhecerá para guardar Armaduras e Escudos.");
-            TagFood = Config.Bind("5. Regras de Baus", "TagComida", "comida, food, rango, consumiveis", "Palavras-chave que o assistente reconhecerá para guardar Comidas e Poções.");
-            TagWood = Config.Bind("5. Regras de Baus", "TagMadeira", "wood, lenha", "Palavras-chave que o assistente reconhecerá para guardar Madeiras em geral.");
-            TagMetal = Config.Bind("5. Regras de Baus", "TagMetal", "metal, minério, ore", "Palavras-chave que o assistente reconhecerá para guardar Minérios e Metais fundidos.");
-            TagIgnore = Config.Bind("5. Regras de Baus", "TagIgnorar", "ignorar, privado, nao tocar, ignore", "Palavras-chave que o assistente reconhecerá para IGNORAR completamente o baú.");
+            TagWeapons = BindSynced("5. Regras de Baus", "TagArmas", "armas, weapons, arsenal", "Palavras-chave (separadas por vírgula) que o assistente reconhecerá no nome do baú para guardar Armas e Ferramentas.");
+            TagArmor = BindSynced("5. Regras de Baus", "TagArmadura", "armaduras, armor, equipamentos", "Palavras-chave que o assistente reconhecerá para guardar Armaduras e Escudos.");
+            TagFood = BindSynced("5. Regras de Baus", "TagComida", "comida, food, rango, consumiveis", "Palavras-chave que o assistente reconhecerá para guardar Comidas e Poções.");
+            TagWood = BindSynced("5. Regras de Baus", "TagMadeira", "wood, lenha", "Palavras-chave que o assistente reconhecerá para guardar Madeiras em geral.");
+            TagMetal = BindSynced("5. Regras de Baus", "TagMetal", "metal, minério, ore", "Palavras-chave que o assistente reconhecerá para guardar Minérios e Metais fundidos.");
+            TagIgnore = BindSynced("5. Regras de Baus", "TagIgnorar", "ignorar, privado, nao tocar, ignore", "Palavras-chave que o assistente reconhecerá para IGNORAR completamente o baú.");
             
             string distWarning = "\n[AVISO] Alterar as distâncias de interação pode deixar o visual do jogo estranho e algumas vezes macabro (telecinese e itens flutuando).\n[Warning] Changing interaction distances may cause weird or macabre visual behaviors (telekinesis and floating items).";
 
-            RepairDistance = Config.Bind("2. Distancias", "DistanciaParaConserto", 6.0f, "Distância máxima para ele consertar paredes, pisos e fornalhas." + distWarning);
-            KilnDistance = Config.Bind("2. Distancias", "DistanciaFornalha", 4.0f, "Distância máxima para abastecer fornalhas." + distWarning);
-            ChestDistance = Config.Bind("2. Distancias", "DistanciaBau", 2.5f, "Distância máxima para guardar ou pegar itens no baú." + distWarning);
-            GroundItemDistance = Config.Bind("2. Distancias", "DistanciaItemChao", 2.0f, "Distância máxima para pegar itens que estão no chão." + distWarning);
+            RepairDistance = BindSynced("2. Distancias", "DistanciaParaConserto", 6.0f, "Distância máxima para ele consertar paredes, pisos e fornalhas." + distWarning);
+            KilnDistance = BindSynced("2. Distancias", "DistanciaFornalha", 4.0f, "Distância máxima para abastecer fornalhas." + distWarning);
+            ChestDistance = BindSynced("2. Distancias", "DistanciaBau", 2.5f, "Distância máxima para guardar ou pegar itens no baú." + distWarning);
+            GroundItemDistance = BindSynced("2. Distancias", "DistanciaItemChao", 2.0f, "Distância máxima para pegar itens que estão no chão." + distWarning);
             
-            StuckTimeout = Config.Bind("3. Desatolamento", "TempoAteTeleportar", 5.0f, "Tempo (em segundos) que ele precisa ficar travado para ativar o teleporte.");
-            TaskTimeout = Config.Bind("3. Desatolamento", "TempoMaximoTarefa", 60.0f, "Tempo máximo (em segundos) que ele fica tentando concluir uma tarefa antes de desistir e resetar.");
+            StuckTimeout = BindSynced("3. Desatolamento", "TempoAteTeleportar", 5.0f, "Tempo (em segundos) que ele precisa ficar travado para ativar o teleporte.");
+            TaskTimeout = BindSynced("3. Desatolamento", "TempoMaximoTarefa", 60.0f, "Tempo máximo (em segundos) que ele fica tentando concluir uma tarefa antes de desistir e resetar.");
 
-            MaxCoalAmount = Config.Bind("4. Producao", "MaximoCarvao", 200, "Quantidade máxima de carvão nos baús antes do Assistente parar de abastecer a Fornalha de Carvão.");
-            MaxSmeltedMetal = Config.Bind("4. Producao", "MaximoMetal", 100, "Quantidade máxima de um metal nos baús antes do Assistente parar de colocar minério na Fundição.");
-            LeaveWoodAmount = Config.Bind("4. Producao", "ReservaMadeira", 10, "Quantidade mínima de segurança de madeira que ele nunca vai retirar do baú.");
-            LeaveCoalAmount = Config.Bind("4. Producao", "ReservaCarvao", 10, "Quantidade mínima de segurança de carvão que ele nunca vai retirar do baú para fornalhas.");
-            LeaveOreAmount = Config.Bind("4. Producao", "ReservaMinerio", 0, "Quantidade mínima de segurança de minério cru que ele deixará intocado no baú.");
+            MaxCoalAmount = BindSynced("4. Producao", "MaximoCarvao", 200, "Quantidade máxima de carvão nos baús antes do Assistente parar de abastecer a Fornalha de Carvão.");
+            LeaveCopperOre = BindSynced("4. Producao", "ReservaCobreCru", 10, "Quantidade mínima de Cobre Cru que ele deixará intocado no baú.");
+            LeaveTinOre = BindSynced("4. Producao", "ReservaEstanhoCru", 10, "Quantidade mínima de Estanho Cru intocado.");
+            LeaveIronOre = BindSynced("4. Producao", "ReservaFerroCru", 10, "Quantidade mínima de Sucata de Ferro intocada.");
+            LeaveSilverOre = BindSynced("4. Producao", "ReservaPrataCrua", 10, "Quantidade mínima de Minério de Prata intocado.");
+            LeaveBlackMetalScrap = BindSynced("4. Producao", "ReservaMetalNegroCru", 10, "Quantidade mínima de Sucata de Metal Negro intocada.");
+            LeaveFlametalOre = BindSynced("4. Producao", "ReservaFlametalCru", 10, "Quantidade mínima de Minério de Flametal intocado.");
+            LeaveWoodAmount = BindSynced("4. Producao", "ReservaMadeira", 10, "Quantidade mínima de segurança de madeira que ele nunca vai retirar do baú.");
+            LeaveCoalAmount = BindSynced("4. Producao", "ReservaCarvao", 10, "Quantidade mínima de segurança de carvão que ele nunca vai retirar do baú para fornalhas.");
+            LeaveOreAmount = BindSynced("4. Producao", "ReservaMinerioGenerico", 0, "Quantidade mínima de segurança de minérios genéricos (Mods).");
 
             Logger.LogInfo($"O mod {PluginName} (v{PluginVersion}) foi carregado com sucesso!");
             // Registro de Peças DEVE ser feito após os prefabs vanilla carregarem
@@ -277,5 +292,10 @@ namespace BaseAssistant
                 Console.instance.Print(msg);
             }
         }
+    }
+
+    public class ConfigurationManagerAttributes
+    {
+        public bool? IsAdminOnly;
     }
 }

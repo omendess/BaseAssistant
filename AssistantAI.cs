@@ -20,6 +20,7 @@ namespace BaseAssistant
         // --- Memória do Assistente ---
         private GameObject _targetObj;
         private string _currentTask = "Idle"; // Idle, PickupGround, MoveToChestToStore, MoveToChestToFetch, FeedKiln
+        private string _lastTaskCategory = ""; // Para Round-Robin Priority
         private ItemDrop.ItemData _heldItemData = null; // Memória completa do item (Mantém nível, encanto, durabilidade)
         private bool _weaponsCleared = false;
         private Dictionary<GameObject, float> _blacklistedObjects = new Dictionary<GameObject, float>();
@@ -146,6 +147,20 @@ namespace BaseAssistant
                 }
             }
             
+            // Força a posição do Assistente se ele estiver fisicamente dormindo na cama
+            if (_isSleeping && _targetObj != null)
+            {
+                transform.position = _targetObj.transform.position + Vector3.up * 0.8f;
+                // Deita o Dverger!
+                transform.rotation = _targetObj.transform.rotation * Quaternion.Euler(-90, 0, 0);
+                
+                if (_character != null)
+                {
+                    var rb = _character.GetComponent<Rigidbody>();
+                    if (rb != null) rb.velocity = Vector3.zero;
+                }
+            }
+            
             _timeSinceLastScan += Time.deltaTime;
             if (_timeSinceLastScan >= _scanInterval)
             {
@@ -203,14 +218,33 @@ namespace BaseAssistant
         {
             List<Piece> pieces = new List<Piece>();
             Piece.GetAllPiecesInRadius(GetBaseCenter(), 15f, pieces);
+            
+            GameObject bestBed = null;
+            float bestDist = float.MaxValue;
+            
             foreach (Piece p in pieces)
             {
                 if (p.name.StartsWith("BaseAssistantBed") || p.m_name.Contains("Cama do Assistente"))
                 {
-                    return p.gameObject;
+                    ZNetView bedView = p.GetComponent<ZNetView>();
+                    if (bedView == null) continue;
+                    ZDOID bedId = bedView.GetZDO().m_uid;
+
+                    // Se a cama estiver reservada por outro NPC, ignora
+                    if (ReservedItems.Contains(bedId) && _reservedZDOID != bedId)
+                    {
+                        continue;
+                    }
+
+                    float dist = Vector3.Distance(transform.position, p.transform.position);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestBed = p.gameObject;
+                    }
                 }
             }
-            return null;
+            return bestBed;
         }
 
         private GameObject FindTotem()
@@ -274,7 +308,15 @@ namespace BaseAssistant
                 if (bed != null)
                 {
                     DropHoldingItem();
-                    SetTask("GoToSleep", bed);
+                    SetTask("GoToSleep", bed); // SetTask limpa reservas antigas
+                    
+                    ZNetView bedView = bed.GetComponent<ZNetView>();
+                    if (bedView != null)
+                    {
+                        ZDOID bedId = bedView.GetZDO().m_uid;
+                        ReservedItems.Add(bedId);
+                        _reservedZDOID = bedId; // Trava esta cama para este NPC até amanhecer
+                    }
                 }
                 else
                 {
@@ -300,18 +342,18 @@ namespace BaseAssistant
                 if (bed != null)
                 {
                     // Tenta jogar ele pra frente da cama
-                    transform.position = bed.transform.position + bed.transform.forward * 1.5f + Vector3.up * 0.5f;
+                    transform.position = bed.transform.position + bed.transform.forward * 1.5f + Vector3.up * 0.1f;
                 }
                 else
                 {
                     GameObject totem = FindTotem();
                     if (totem != null)
                     {
-                        transform.position = totem.transform.position + totem.transform.forward * 1.5f + Vector3.up * 0.5f;
+                        transform.position = totem.transform.position + totem.transform.forward * 1.5f + Vector3.up * 0.1f;
                     }
                     else
                     {
-                        transform.position = GetBaseCenter() + transform.forward * 1.5f + Vector3.up * 0.5f;
+                        transform.position = GetBaseCenter() + transform.forward * 1.5f + Vector3.up * 0.1f;
                     }
                 }
                 
@@ -452,6 +494,10 @@ namespace BaseAssistant
 
                     ZNetView smelterView = smelter.GetComponent<ZNetView>();
                     if (smelterView == null || !smelterView.IsValid()) continue;
+                    
+                    ZDOID smelterId = smelterView.GetZDO().m_uid;
+                    // Se a máquina estiver sendo usada por outro assistente, ignore!
+                    if (ReservedItems.Contains(smelterId) && _reservedZDOID != smelterId) continue;
 
                     // 1. Verifica se precisa de FUEL (Combustível: Carvão/Madeira)
                     if (smelter.m_maxFuel > 0 && smelter.m_fuelItem != null)
@@ -470,6 +516,8 @@ namespace BaseAssistant
                                 _heldItemData.m_stack = 0;
                                 _targetSmelter = smelter.gameObject;
                                 SetTask("MoveToChestToFetch", fuelChest.gameObject);
+                                ReservedItems.Add(smelterId);
+                                _reservedZDOID = smelterId;
                                 return true;
                             }
                             else
@@ -500,24 +548,43 @@ namespace BaseAssistant
                                 {
                                     continue; // Pula essa conversão para proteger a madeira
                                 }
+
+                                int producedCount = CountItemInBase(producedItemName, hits);
+                                if (producedCount >= Plugin.MaxCoalAmount.Value)
+                                {
+                                    continue; // Para carvão, repeita o limite máximo de produção
+                                }
                             }
 
-                            // Limites de Produção
-                            int producedCount = CountItemInBase(producedItemName, hits);
-                            int maxAllowed = producedItemName.ToLower().Contains("coal") ? Plugin.MaxCoalAmount.Value : Plugin.MaxSmeltedMetal.Value;
+                            int leaveAmount = Plugin.LeaveOreAmount.Value; // Fallback genérico
+                            string rName = rawItemName.ToLower();
 
-                            if (producedCount < maxAllowed)
+                            if (rName.Contains("wood")) leaveAmount = Plugin.LeaveWoodAmount.Value;
+                            else if (rName.Contains("copper")) leaveAmount = Plugin.LeaveCopperOre.Value;
+                            else if (rName.Contains("tin")) leaveAmount = Plugin.LeaveTinOre.Value;
+                            else if (rName.Contains("iron")) leaveAmount = Plugin.LeaveIronOre.Value;
+                            else if (rName.Contains("silver")) leaveAmount = Plugin.LeaveSilverOre.Value;
+                            else if (rName.Contains("blackmetal")) leaveAmount = Plugin.LeaveBlackMetalScrap.Value;
+                            else if (rName.Contains("flametal")) leaveAmount = Plugin.LeaveFlametalOre.Value;
+
+                            Container oreChest = FindChestForSmelterItem(hits, rawItemName, leaveAmount);
+                            if (oreChest != null)
                             {
-                                int leaveAmount = rawItemName.ToLower().Contains("wood") ? Plugin.LeaveWoodAmount.Value : Plugin.LeaveOreAmount.Value;
-                                Container oreChest = FindChestForSmelterItem(hits, rawItemName, leaveAmount);
-                                if (oreChest != null)
+                                _heldItemData = conversion.m_from.m_itemData.Clone();
+                                _heldItemData.m_dropPrefab = conversion.m_from.gameObject;
+                                _heldItemData.m_stack = 0;
+                                _targetSmelter = smelter.gameObject;
+                                SetTask("MoveToChestToFetch", oreChest.gameObject);
+                                ReservedItems.Add(smelterId);
+                                _reservedZDOID = smelterId;
+                                return true;
+                            }
+                            else
+                            {
+                                if (!producedItemName.ToLower().Contains("coal"))
                                 {
-                                    _heldItemData = conversion.m_from.m_itemData.Clone();
-                                    _heldItemData.m_dropPrefab = conversion.m_from.gameObject;
-                                    _heldItemData.m_stack = 0;
-                                    _targetSmelter = smelter.gameObject;
-                                    SetTask("MoveToChestToFetch", oreChest.gameObject);
-                                    return true;
+                                    string localizedMetal = Localization.instance.Localize(conversion.m_to.m_itemData.m_shared.m_name);
+                                    SayMessage("no_ore_" + rawItemName, $"Chefe, a reserva de minério secou! Sem material para {localizedMetal}!", 10f);
                                 }
                             }
                         }
@@ -554,12 +621,14 @@ namespace BaseAssistant
                 return;
             }
 
-            float d = 3.0f; // Distância pra considerar que chegou na cama
-            if (IsCloseEnough(_targetObj, d, d))
+            // Distância simples em linha reta (ignorando Y para não bugar com altura da cama)
+            float distXZ = Vector2.Distance(new Vector2(transform.position.x, transform.position.z), new Vector2(_targetObj.transform.position.x, _targetObj.transform.position.z));
+            
+            if (distXZ < 2.0f)
             {
                 _isSleeping = true;
-                _currentTask = "Idle";
                 _monsterAI.SetFollowTarget(null);
+                _character.SetMoveDir(Vector3.zero);
             }
             else
             {
@@ -651,6 +720,9 @@ namespace BaseAssistant
 
         private void FindNewTask()
         {
+            if (_nview != null && !_nview.IsOwner()) return;
+            if (_currentTask != "Idle") return;
+
             Collider[] hits = Physics.OverlapSphere(GetBaseCenter(), Plugin.WorkRadius.Value); 
             
             // PRIORIDADE 1: Se tem algo nas mãos, tenta pegar mais do mesmo (chaining) ou vai guardar
@@ -696,78 +768,110 @@ namespace BaseAssistant
                 return; 
             }
 
-            // PRIORIDADE 2: Separar itens do Baú Mestre de Entrada (Inbox)
-            if (Plugin.EnableSorting.Value)
+            // SISTEMA ROUND-ROBIN (Dois Passes para evitar Visão de Túnel)
+            // Passe 1: Pula a última categoria trabalhada.
+            // Passe 2: Considera todas as opções (se for a única coisa sobrando na base).
+            for (int pass = 1; pass <= 2; pass++)
             {
-                Container inboxChest = FindInboxChestWithValidItems();
-                if (inboxChest != null)
-                {
-                    _currentTask = "TakeFromInbox";
-                    _targetObj = inboxChest.gameObject;
-                    _monsterAI.SetFollowTarget(_targetObj);
-                    return;
-                }
-            }
+                bool skipSorting = (pass == 1 && _lastTaskCategory == "Sorting");
+                bool skipRepair = (pass == 1 && _lastTaskCategory == "Repair");
+                bool skipSmelting = (pass == 1 && _lastTaskCategory == "Smelting");
+                bool skipLooting = (pass == 1 && _lastTaskCategory == "Looting");
 
-            // PRIORIDADE 3: Procurar o que consertar
-            if (Plugin.EnableRepairing.Value)
-            {
-                foreach (var hit in hits)
+                // PRIORIDADE 2: Separar itens do Baú Mestre de Entrada (Inbox)
+                if (!skipSorting && Plugin.EnableSorting.Value)
                 {
-                    Piece piece = hit.GetComponentInParent<Piece>();
-                    if (piece != null)
+                    Container inboxChest = FindInboxChestWithValidItems();
+                    if (inboxChest != null)
                     {
-                        if (_blacklistedObjects.ContainsKey(piece.gameObject) && Time.time < _blacklistedObjects[piece.gameObject]) continue;
-                        WearNTear wear = piece.GetComponent<WearNTear>();
-                        if (wear != null && wear.GetHealthPercentage() < Plugin.RepairHealthThreshold.Value)
-                        {
-                            SetTask("RepairPiece", piece.gameObject);
-                            return; 
-                        }
+                        _lastTaskCategory = "Sorting";
+                        _currentTask = "TakeFromInbox";
+                        _targetObj = inboxChest.gameObject;
+                        _monsterAI.SetFollowTarget(_targetObj);
+                        return;
                     }
                 }
-            }
 
-            // PRIORIDADE 4: Abastecer os Fornos (Carvoaria e Fundições)
-            if (Plugin.EnableSmelting.Value)
-            {
-                if (CheckAndSetSmeltingTask(hits)) return;
-            }
-
-            // PRIORIDADE 5: Limpar itens do chão (apenas se couber nos baús)
-            if (Plugin.EnableLooting.Value)
-            {
-                foreach (var hit in hits)
+                // PRIORIDADE 3: Procurar o que consertar
+                if (!skipRepair && Plugin.EnableRepairing.Value)
                 {
-                    ItemDrop item = hit.GetComponentInParent<ItemDrop>();
-                    if (item != null && item.GetComponent<ZNetView>() != null && item.GetComponent<ZNetView>().IsValid())
+                    foreach (var hit in hits)
                     {
-                        ZDOID uid = item.GetComponent<ZNetView>().GetZDO().m_uid;
-                        if (ReservedItems.Contains(uid)) continue; // Evita duplicação de múltiplos NPCs pegando
-
-                        if (_blacklistedObjects.ContainsKey(item.gameObject) && Time.time < _blacklistedObjects[item.gameObject]) continue;
-                        if (item.m_itemData != null) // Aceitamos qualquer item (Stack > 1 ou armas/ferramentas)
+                        Piece piece = hit.GetComponentInParent<Piece>();
+                        if (piece != null)
                         {
-                            Container chest = FindChestFor(item.m_itemData, hits);
-                            if (chest != null)
+                            if (_blacklistedObjects.ContainsKey(piece.gameObject) && Time.time < _blacklistedObjects[piece.gameObject]) continue;
+                            WearNTear wear = piece.GetComponent<WearNTear>();
+                            if (wear != null && wear.GetHealthPercentage() < Plugin.RepairHealthThreshold.Value)
                             {
-                                SetTask("PickupGround", item.gameObject);
-                                ReservedItems.Add(uid);
-                                _reservedZDOID = uid;
-                                return;
+                                ZNetView pieceView = piece.GetComponent<ZNetView>();
+                                if (pieceView != null && pieceView.IsValid())
+                                {
+                                    ZDOID pieceId = pieceView.GetZDO().m_uid;
+                                    if (ReservedItems.Contains(pieceId) && _reservedZDOID != pieceId) continue;
+                                    
+                                    _lastTaskCategory = "Repair";
+                                    SetTask("RepairPiece", piece.gameObject);
+                                    ReservedItems.Add(pieceId);
+                                    _reservedZDOID = pieceId;
+                                    return; 
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // PRIORIDADE 6: Consolidar/Reorganizar Estoque
-            if (Plugin.EnableSorting.Value)
-            {
-                if (CheckAndSetConsolidationTask(hits)) return;
+                // PRIORIDADE 4: Abastecer os Fornos (Carvoaria e Fundições)
+                if (!skipSmelting && Plugin.EnableSmelting.Value)
+                {
+                    if (CheckAndSetSmeltingTask(hits))
+                    {
+                        _lastTaskCategory = "Smelting";
+                        return;
+                    }
+                }
+
+                // PRIORIDADE 5: Limpar itens do chão (apenas se couber nos baús)
+                if (!skipLooting && Plugin.EnableLooting.Value)
+                {
+                    foreach (var hit in hits)
+                    {
+                        ItemDrop item = hit.GetComponentInParent<ItemDrop>();
+                        if (item != null && item.GetComponent<ZNetView>() != null && item.GetComponent<ZNetView>().IsValid())
+                        {
+                            ZDOID uid = item.GetComponent<ZNetView>().GetZDO().m_uid;
+                            if (ReservedItems.Contains(uid)) continue; // Evita duplicação de múltiplos NPCs pegando
+
+                            if (_blacklistedObjects.ContainsKey(item.gameObject) && Time.time < _blacklistedObjects[item.gameObject]) continue;
+                            if (item.m_itemData != null) // Aceitamos qualquer item (Stack > 1 ou armas/ferramentas)
+                            {
+                                Container chest = FindChestFor(item.m_itemData, hits);
+                                if (chest != null)
+                                {
+                                    _lastTaskCategory = "Looting";
+                                    SetTask("PickupGround", item.gameObject);
+                                    ReservedItems.Add(uid);
+                                    _reservedZDOID = uid;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // PRIORIDADE 6: Consolidar/Reorganizar Estoque
+                if (!skipSorting && Plugin.EnableSorting.Value)
+                {
+                    if (CheckAndSetConsolidationTask(hits))
+                    {
+                        _lastTaskCategory = "Sorting";
+                        return;
+                    }
+                }
             }
 
             // Se chegou até aqui, nenhuma tarefa foi encontrada (Base 100% organizada)
+            _lastTaskCategory = ""; // Reseta o ciclo
             SayMessage("all_done", "Base 100% limpa e organizada. Pausa para o hidromel!", 60f);
         }
 

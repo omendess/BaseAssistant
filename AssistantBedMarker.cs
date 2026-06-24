@@ -56,7 +56,7 @@ namespace BaseAssistant
 
         public string GetHoverName()
         {
-            return "Cama do Assistente";
+            return "Totem do Assistente";
         }
     }
 }
